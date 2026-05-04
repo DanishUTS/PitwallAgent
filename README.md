@@ -6,8 +6,6 @@ a track while a separate supervised tire-degradation model predicts wear.
 The objective is to minimise total race time by trading off raw speed against
 tire strategy and pit stops.
 
-UTS — Artificial Intelligence in Robotics group project.
-
 ---
 
 ## Team
@@ -21,9 +19,9 @@ UTS — Artificial Intelligence in Robotics group project.
 
 ---
 
-## The two AI components
+## The Two AI Components
 
-### 1. Reinforcement Learning agent — PPO
+### 1. Reinforcement Learning Agent — PPO
 
 Proximal Policy Optimisation via [Stable Baselines3](https://stable-baselines3.readthedocs.io/).
 The agent's observation is a dict combining the rendered 96×96 RGB frame with a
@@ -34,7 +32,7 @@ penalty, and applies a fixed time penalty whenever the agent enters the
 pit-lane trigger zone (which resets tire wear). The agent therefore has to
 learn *when* to pit, not just *how* to drive.
 
-### 2. Supervised tire model — regression
+### 2. Supervised Tire Model — Regression
 
 A `GradientBoostingRegressor` (scikit-learn) trained on synthetic tire
 degradation samples. Inputs are `speed`, `cornering_load`, and `lap`; the
@@ -70,7 +68,7 @@ pip install -r requirements.txt
 
 ---
 
-## Running the code
+## Running The Code
 
 All commands are run from the `PitwallAgent/` folder.
 
@@ -106,7 +104,7 @@ tensorboard --logdir runs/
 
 ---
 
-## Folder layout
+## Folder Layout
 
 ```
 PitwallAgent/
