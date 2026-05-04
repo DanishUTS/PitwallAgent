@@ -17,10 +17,17 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from environment import PitwallRacingEnv
+from tire_model import COMPOUNDS
 
 
-def make_env():
-    return PitwallRacingEnv(render_mode=None)
+def make_env_factory(compound: str, use_tire_model: bool):
+    def _make():
+        return PitwallRacingEnv(
+            render_mode=None,
+            compound=compound,
+            use_tire_model=use_tire_model,
+        )
+    return _make
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,6 +41,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--n-steps", type=int, default=2048)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--ent-coef", type=float, default=0.0)
+    p.add_argument("--compound", choices=list(COMPOUNDS), default="medium")
+    p.add_argument(
+        "--no-tire-model",
+        action="store_true",
+        help="Use the legacy hand-tuned wear formula instead of the trained tire model.",
+    )
     return p.parse_args()
 
 
@@ -42,7 +55,9 @@ def main() -> None:
     args.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     args.log_dir.mkdir(parents=True, exist_ok=True)
 
-    env = DummyVecEnv([make_env])
+    env = DummyVecEnv(
+        [make_env_factory(args.compound, use_tire_model=not args.no_tire_model)]
+    )
 
     model = PPO(
         "MultiInputPolicy",
