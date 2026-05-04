@@ -1,0 +1,9 @@
+gymnasium[box2d]==1.0.0
+stable-baselines3==2.4.0
+scikit-learn==1.5.2
+numpy==1.26.4
+matplotlib==3.9.2
+pygame==2.6.1
+opencv-python==4.10.0.84
+tensorboard==2.18.0
+joblib==1.4.2

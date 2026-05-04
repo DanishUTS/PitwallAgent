@@ -1,0 +1,63 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+.Python
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Tooling caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- ML artifacts (large / regenerable) ---
+*.zip
+*.pkl
+*.pt
+*.pth
+*.h5
+*.onnx
+*.npz
+*.npy
+
+# --- Logs and tensorboard ---
+runs/
+logs/
+tensorboard/
+*.log
+
+# --- Project-specific large outputs (keep dirs via .gitkeep) ---
+models/checkpoints/*
+!models/checkpoints/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+evaluation/results/
+
+# --- Personal working notes ---
+LOGBOOK.md
