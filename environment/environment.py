@@ -2,8 +2,8 @@
 
 Wraps Gymnasium's `CarRacing-v3` and adds:
   * a continuous tire-wear state (0-100 %) driven by the supervised tire model
-    (`tire_model.predict_wear_rate`); a hand-tuned legacy formula is kept as
-    a fallback so the env still runs if the tire model hasn't been trained
+    (`tire_model.predict_wear_rate`); pass `use_tire_model=False` to fall back
+    to a hand-tuned legacy formula for baseline runs
   * a tire compound (soft / medium / hard) fixed per episode
   * a pit-lane trigger zone — a circle around the spawn tile (`track[0]`),
     cached at reset since the track is regenerated each episode; pit fires
@@ -17,8 +17,6 @@ tire-wear / lap / compound state. Requires `MultiInputPolicy` on the SB3 side.
 """
 
 from __future__ import annotations
-
-import warnings
 
 import gymnasium as gym
 import numpy as np
@@ -95,24 +93,21 @@ class PitwallRacingEnv(gym.Wrapper):
         self._lap_times: list[int] = []
         self._pit_zone_xy: tuple[float, float] | None = None
 
-        # Eagerly attempt to warm the tire-model cache so a missing artefact
-        # surfaces at construction time, not deep in the first step().
+        # Eagerly warm the tire-model cache so a missing artefact surfaces
+        # at construction time rather than deep in the first step(). With
+        # SubprocVecEnv this runs once per worker — joblib loads the .pkl
+        # in roughly 50 ms, fine. Fail loudly if the model isn't trained:
+        # silent fallback makes the user think they're using the supervised
+        # model when they aren't. Pass `use_tire_model=False` for the
+        # explicit baseline mode.
         if self.use_tire_model:
-            try:
-                _ = predict_wear_rate(
-                    speed=50.0,
-                    cornering_load=3.0,
-                    lap=1,
-                    current_wear=0.0,
-                    compound=self.compound,
-                )
-            except FileNotFoundError as exc:
-                warnings.warn(
-                    f"{exc}  Falling back to legacy hand-tuned wear formula. "
-                    "Run `python -m tire_model.tire_model` to train the model.",
-                    stacklevel=2,
-                )
-                self.use_tire_model = False
+            predict_wear_rate(
+                speed=50.0,
+                cornering_load=3.0,
+                lap=1,
+                current_wear=0.0,
+                compound=self.compound,
+            )
 
         image_space = self.env.observation_space
         # state vector: [tire_wear, lap_count, compound_id]
@@ -125,11 +120,14 @@ class PitwallRacingEnv(gym.Wrapper):
 
     # ------------------------------------------------------------------ API
     def reset(self, *, seed: int | None = None, options: dict | None = None):
-        # Allow caller to switch compound per episode via options={"compound": "soft"}
-        if options is not None and "compound" in options:
-            self.set_compound(options["compound"])
+        # Pop our wrapper-specific keys so we don't pass them to the
+        # underlying CarRacing env. Allow `options={"compound": "soft"}` to
+        # switch compound per episode.
+        inner_options = dict(options) if options else None
+        if inner_options is not None and "compound" in inner_options:
+            self.set_compound(inner_options.pop("compound"))
 
-        obs, info = self.env.reset(seed=seed, options=options)
+        obs, info = self.env.reset(seed=seed, options=inner_options)
         self.tire_wear = 0.0
         self.lap_count = 0
         self._steps_this_lap = 0
@@ -197,7 +195,6 @@ class PitwallRacingEnv(gym.Wrapper):
         info["pit_zone_distance"] = self._pit_zone_distance()
         if lap_time is not None:
             info["lap_time_steps"] = lap_time
-        info["lap_times_so_far"] = list(self._lap_times)
 
         return self._obs(obs), reward, terminated, truncated, info
 
