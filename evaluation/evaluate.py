@@ -73,6 +73,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use the legacy hand-tuned wear formula instead of the trained tire model.",
     )
+    p.add_argument(
+        "--max-laps",
+        type=int,
+        default=PitwallRacingEnv.DEFAULT_MAX_LAPS,
+        help="Race length in laps before the episode truncates. Should match training.",
+    )
+    p.add_argument(
+        "--max-episode-steps",
+        type=int,
+        default=PitwallRacingEnv.DEFAULT_MAX_EPISODE_STEPS,
+        help="Hard time limit per episode (env steps). Should match training.",
+    )
     return p.parse_args()
 
 
@@ -217,10 +229,12 @@ def plot_per_lap_wear(
     results: list[EpisodeResult], output_path: Path
 ) -> Path | None:
     if not any(r.lap_end_wears for r in results):
+        print(f"  [skip] {output_path.name}: no lap completed in any episode")
         return None
     n_eps = len(results)
     max_lap = max(len(r.lap_end_wears) for r in results)
     if max_lap == 0:
+        print(f"  [skip] {output_path.name}: no lap completed in any episode")
         return None
 
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -251,6 +265,7 @@ def plot_racing_line(
     """Episode 0 only — different seeds yield different tracks, so overlaying
     multiple episodes' trajectories on one chart would be misleading."""
     if not results or not results[0].trajectory:
+        print(f"  [skip] {output_path.name}: episode 0 has no trajectory")
         return None
     r = results[0]
 
@@ -362,6 +377,8 @@ def main() -> None:
         render_mode=None,
         compound=args.compound,
         use_tire_model=not args.no_tire_model,
+        max_laps=args.max_laps,
+        max_episode_steps=args.max_episode_steps,
     )
 
     print(f"Loading primary model: {args.model_path}")

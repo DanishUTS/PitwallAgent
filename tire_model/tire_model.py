@@ -26,7 +26,6 @@ Run end-to-end (regenerate data + retrain + save + plot):
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple, Union
 
 import joblib
 import numpy as np
@@ -34,7 +33,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import train_test_split
 
-ArrayLike = Union[float, np.ndarray]
+ArrayLike = float | np.ndarray
 
 DEFAULT_MODEL_PATH = Path("models/checkpoints/tire_model.pkl")
 DEFAULT_DATA_PATH = Path("data/synthetic/tire_data.npz")
@@ -75,11 +74,13 @@ def _physics_wear_rate(
     current_wear = np.asarray(current_wear, dtype=np.float32)
     compound_id = np.asarray(compound_id, dtype=np.int64)
 
-    base = np.empty_like(speed)
-    speed_gain = np.empty_like(speed)
-    load_gain = np.empty_like(speed)
-    heat_gain = np.empty_like(speed)
-    cliff = np.empty_like(speed)
+    # zeros_like (not empty_like): if a compound_id is ever out of range,
+    # the slot stays at 0 instead of holding uninitialised garbage.
+    base = np.zeros_like(speed)
+    speed_gain = np.zeros_like(speed)
+    load_gain = np.zeros_like(speed)
+    heat_gain = np.zeros_like(speed)
+    cliff = np.zeros_like(speed)
     for i, name in enumerate(COMPOUNDS):
         mask = compound_id == i
         p = _COMPOUND_PARAMS[name]
@@ -110,7 +111,7 @@ def _physics_wear_rate(
 def generate_synthetic_dataset(
     n_samples: int = 12_000,
     seed: int = 0,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     speed = rng.uniform(0.0, 100.0, size=n_samples).astype(np.float32)
     load = rng.uniform(0.0, 10.0, size=n_samples).astype(np.float32)
@@ -168,7 +169,7 @@ def predict_wear_rate(
     cornering_load: ArrayLike,
     lap: ArrayLike,
     current_wear: ArrayLike = 0.0,
-    compound: Union[str, int, np.ndarray] = "medium",
+    compound: str | int | np.ndarray = "medium",
     model_path: Path = DEFAULT_MODEL_PATH,
 ) -> ArrayLike:
     """Predict instantaneous tire wear rate.
