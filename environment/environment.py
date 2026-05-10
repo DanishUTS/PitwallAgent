@@ -84,7 +84,7 @@ class PitwallRacingEnv(gym.Wrapper):
     # tight on the car with little lookahead. We lower it to 1.5 by default
     # so the agent sees more of the track ahead. Lower → wider view (track
     # appears thinner); higher → tighter (more pixels per metre of road).
-    DEFAULT_ZOOM: float = 1.5
+    DEFAULT_ZOOM: float = 1.0
 
     def __init__(
         self,

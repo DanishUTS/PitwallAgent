@@ -19,7 +19,15 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
 from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import (
+    DummyVecEnv,
+    VecEnv,
+    VecFrameStack,
+    VecMonitor,
+    VecTransposeImage,
+)
 
 from environment import PitwallRacingEnv
 from tire_model import COMPOUNDS
@@ -70,6 +78,12 @@ def parse_args() -> argparse.Namespace:
         help="Camera zoom. Should match the value used in training.",
     )
     p.add_argument(
+        "--frame-stack",
+        type=int,
+        default=4,
+        help="Stack the last N frames (must match training).",
+    )
+    p.add_argument(
         "--deterministic",
         action="store_true",
         default=True,
@@ -90,14 +104,25 @@ def main() -> None:
     if args.model_path is not None and not args.model_path.exists():
         raise FileNotFoundError(f"No checkpoint at {args.model_path}")
 
-    env = PitwallRacingEnv(
-        render_mode="human",
-        compound=args.compound,
-        use_tire_model=not args.no_tire_model,
-        max_laps=args.max_laps,
-        max_episode_steps=args.max_episode_steps,
-        zoom=args.zoom,
+    def _factory() -> PitwallRacingEnv:
+        return PitwallRacingEnv(
+            render_mode="human",
+            compound=args.compound,
+            use_tire_model=not args.no_tire_model,
+            max_laps=args.max_laps,
+            max_episode_steps=args.max_episode_steps,
+            zoom=args.zoom,
+        )
+
+    monitored = VecMonitor(DummyVecEnv([_factory]))
+    stacked: VecEnv = (
+        VecFrameStack(monitored, n_stack=args.frame_stack)
+        if args.frame_stack > 1
+        else monitored
     )
+    # PPO auto-wraps with VecTransposeImage during training. Mirror that so
+    # the obs layout matches what the saved policy expects.
+    env: VecEnv = VecTransposeImage(stacked)
 
     model: PPO | None = None
     if not args.random:
@@ -110,20 +135,24 @@ def main() -> None:
     try:
         for ep in range(args.episodes):
             seed = args.seed + ep
-            obs, _ = env.reset(seed=seed)
+            env.seed(seed)
+            obs = env.reset()
             total_reward = 0.0
             steps = 0
             pit_count = 0
             info: dict = {}
             done = False
-            truncated = False
-            while not (done or truncated):
+            while not done:
                 if model is not None:
-                    action, _ = model.predict(obs, deterministic=args.deterministic)
+                    actions, _ = model.predict(obs, deterministic=args.deterministic)
                 else:
-                    action = env.action_space.sample()
-                obs, reward, done, truncated, info = env.step(action)
-                total_reward += float(reward)
+                    # action_space on a VecEnv is the per-env space; sample once
+                    # and wrap into a batch of size 1.
+                    actions = np.array([env.action_space.sample()])
+                obs, rewards, dones, infos = env.step(actions)
+                total_reward += float(rewards[0])
+                info = infos[0]
+                done = bool(dones[0])
                 steps += 1
                 if info.get("pit_stop"):
                     pit_count += 1
