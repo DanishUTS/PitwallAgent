@@ -273,8 +273,10 @@ def plot_racing_line(
 
     track = getattr(env.unwrapped, "track", None)
     if track:
-        tx = [t[3] for t in track] + [track[0][3]]
-        ty = [t[4] for t in track] + [track[0][4]]
+        # Last two elements of each tile are (x, y); tuple length varies
+        # across gym/gymnasium versions, so use negative indexing.
+        tx = [t[-2] for t in track] + [track[0][-2]]
+        ty = [t[-1] for t in track] + [track[0][-1]]
         ax.plot(tx, ty, color="lightgrey", linewidth=2, label="track")
 
     xs = [p[0] for p in r.trajectory]
