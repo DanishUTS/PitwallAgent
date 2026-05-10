@@ -32,7 +32,12 @@ class PitwallRacingEnv(gym.Wrapper):
     # moderate driving deteriorates over a few thousand env steps rather than
     # in seconds.
     WEAR_PER_STEP_SCALE: float = 0.02
-    WEAR_REWARD_PENALTY: float = 0.001  # reward shaping: -k * tire_wear / step
+    # Phase-1 training: wear penalty disabled. The agent has to learn to drive
+    # before strategy makes sense — with the penalty active, the local optimum
+    # is "stand still" (no wear, only the base −0.1/step time penalty), which
+    # the agent collapses to before discovering tile rewards. Re-enable to
+    # ~0.001 for a phase-2 fine-tune once the agent reliably stays on track.
+    WEAR_REWARD_PENALTY: float = 0.0
     MAX_WEAR: float = 100.0
 
     # Cornering load is read from the car's lateral acceleration
@@ -46,7 +51,9 @@ class PitwallRacingEnv(gym.Wrapper):
     LEGACY_WEAR_STEER_GAIN: float = 0.05
 
     # --- pit lane (anchored to a real track tile, cached on reset) ---------
-    # Index into env.unwrapped.track (a list of (alpha, beta1, beta2, x, y)).
+    # Index into env.unwrapped.track. Each tile is a tuple whose **last two**
+    # elements are (x, y) world coords — the exact tuple length has shifted
+    # across gym / gymnasium versions, so we read by negative index.
     # Tile 0 is where CarRacing spawns the car — the natural start/finish
     # line analogue, which matches where pit lanes sit in real F1.
     PIT_TILE_INDEX: int = 0
@@ -254,18 +261,22 @@ class PitwallRacingEnv(gym.Wrapper):
     def _cache_pit_zone_position(self) -> None:
         """Read the pit-zone tile coords from the freshly-built track.
 
-        CarRacing-v3 stores the track as a list of (alpha, beta1, beta2, x, y)
-        tuples in `env.unwrapped.track`. Tile 0 is the spawn point. The track
-        is regenerated on every `reset()`, so this has to run after
-        `self.env.reset(...)` returns.
+        Each tile in `env.unwrapped.track` is a tuple whose last two
+        elements are the tile's (x, y) world coords. The exact tuple length
+        has varied across gym / gymnasium versions (4 in some, 5 in others),
+        so we use negative indexing rather than fixed positions. Tile 0 is
+        the spawn point. The track is regenerated on every `reset()`, so
+        this has to run after `self.env.reset(...)` returns.
         """
         track = getattr(self.env.unwrapped, "track", None)
         if not track or self.PIT_TILE_INDEX >= len(track) or self.PIT_TILE_INDEX < 0:
             self._pit_zone_xy = None
             return
         tile = track[self.PIT_TILE_INDEX]
-        # tile = (alpha, beta1, beta2, x, y)
-        self._pit_zone_xy = (float(tile[3]), float(tile[4]))
+        if len(tile) < 2:
+            self._pit_zone_xy = None
+            return
+        self._pit_zone_xy = (float(tile[-2]), float(tile[-1]))
 
     def _pit_zone_distance(self) -> float:
         car = self._car()
