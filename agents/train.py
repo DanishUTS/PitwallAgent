@@ -50,12 +50,13 @@ def make_env_factory(
     use_tire_model: bool,
     max_laps: int,
     max_episode_steps: int,
+    zoom: float,
 ):
     """Return a zero-arg factory that builds a fresh PitwallRacingEnv.
 
     Used by both DummyVecEnv (in-process) and SubprocVecEnv (subprocesses).
-    The closure captures simple types only (str, bool, int) — all pickle
-    cleanly via cloudpickle, which SubprocVecEnv uses.
+    The closure captures simple types only (str, bool, int, float) — all
+    pickle cleanly via cloudpickle, which SubprocVecEnv uses.
     """
 
     def _make() -> PitwallRacingEnv:
@@ -65,6 +66,7 @@ def make_env_factory(
             use_tire_model=use_tire_model,
             max_laps=max_laps,
             max_episode_steps=max_episode_steps,
+            zoom=zoom,
         )
 
     return _make
@@ -76,6 +78,7 @@ def build_train_env(args: argparse.Namespace) -> VecEnv:
         use_tire_model=not args.no_tire_model,
         max_laps=args.max_laps,
         max_episode_steps=args.max_episode_steps,
+        zoom=args.zoom,
     )
     if args.n_envs <= 1:
         # Single-env: DummyVecEnv keeps everything in-process. Faster setup,
@@ -97,6 +100,7 @@ def build_eval_env(args: argparse.Namespace) -> VecEnv:
         use_tire_model=not args.no_tire_model,
         max_laps=args.max_laps,
         max_episode_steps=args.max_episode_steps,
+        zoom=args.zoom,
     )
     return VecMonitor(DummyVecEnv([factory]))
 
@@ -200,6 +204,9 @@ def parse_args() -> argparse.Namespace:
     g_env.add_argument("--max-episode-steps", type=int,
                        default=PitwallRacingEnv.DEFAULT_MAX_EPISODE_STEPS,
                        help="Hard time limit per episode (env steps).")
+    g_env.add_argument("--zoom", type=float, default=PitwallRacingEnv.DEFAULT_ZOOM,
+                       help="Camera zoom. Lower = wider view (more lookahead). "
+                            "gymnasium's CarRacing default is 2.7; we default to 1.5.")
 
     g_ppo = p.add_argument_group("PPO hyperparameters (defaults from SB3 zoo CarRacing recipe)")
     g_ppo.add_argument("--learning-rate", type=float, default=3e-4)

@@ -38,6 +38,8 @@ def parse_args() -> argparse.Namespace:
                    default=Path("evaluation/results/track_preview.png"))
     p.add_argument("--human", action="store_true",
                    help="Also open a pygame window so you can see the rendered camera view.")
+    p.add_argument("--zoom", type=float, default=PitwallRacingEnv.DEFAULT_ZOOM,
+                   help="Camera zoom (only matters with --human; matplotlib plot is unaffected).")
     return p.parse_args()
 
 
@@ -99,7 +101,11 @@ def main() -> None:
     # at track geometry. If you've trained the tire model, flipping this to
     # True won't change the picture — wear isn't relevant for a single reset.
     render_mode = "human" if args.human else None
-    env = PitwallRacingEnv(render_mode=render_mode, use_tire_model=False)
+    env = PitwallRacingEnv(
+        render_mode=render_mode,
+        use_tire_model=False,
+        zoom=args.zoom,
+    )
 
     n = max(1, args.n_seeds)
     if n == 1:

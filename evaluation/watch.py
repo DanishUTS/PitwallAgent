@@ -64,6 +64,12 @@ def parse_args() -> argparse.Namespace:
         help="Hard time limit per episode (env steps).",
     )
     p.add_argument(
+        "--zoom",
+        type=float,
+        default=PitwallRacingEnv.DEFAULT_ZOOM,
+        help="Camera zoom. Should match the value used in training.",
+    )
+    p.add_argument(
         "--deterministic",
         action="store_true",
         default=True,
@@ -90,6 +96,7 @@ def main() -> None:
         use_tire_model=not args.no_tire_model,
         max_laps=args.max_laps,
         max_episode_steps=args.max_episode_steps,
+        zoom=args.zoom,
     )
 
     model: PPO | None = None
