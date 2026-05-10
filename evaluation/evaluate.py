@@ -49,6 +49,11 @@ class EpisodeResult:
     trajectory: list[tuple[float, float]] = field(default_factory=list)
     pit_zone_xy: tuple[float, float] | None = None
     pit_step_indices: list[int] = field(default_factory=list)
+    # Snapshot of the track tiles at this episode's reset. We can't read this
+    # from the env at plot time because every later reset rebuilds the track,
+    # so plotting episode-0's trajectory on env.unwrapped.track would draw
+    # against whatever track the *last* episode used.
+    track_xy: list[tuple[float, float]] = field(default_factory=list)
 
 
 def parse_args() -> argparse.Namespace:
@@ -85,6 +90,13 @@ def parse_args() -> argparse.Namespace:
         default=PitwallRacingEnv.DEFAULT_MAX_EPISODE_STEPS,
         help="Hard time limit per episode (env steps). Should match training.",
     )
+    p.add_argument(
+        "--zoom",
+        type=float,
+        default=PitwallRacingEnv.DEFAULT_ZOOM,
+        help="Camera zoom. Should match training; mismatched zoom means the "
+             "CNN sees a different visual distribution than it was trained on.",
+    )
     return p.parse_args()
 
 
@@ -93,7 +105,19 @@ def parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 def run_episode(env: PitwallRacingEnv, model: PPO, seed: int) -> EpisodeResult:
     obs, info = env.reset(seed=seed)
-    result = EpisodeResult(seed=seed, pit_zone_xy=info.get("pit_zone_xy"))
+
+    # Snapshot the track for THIS episode's seed. Each future reset rebuilds
+    # `env.unwrapped.track`, so we can't read it back at plot time.
+    track = getattr(env.unwrapped, "track", None)
+    track_xy: list[tuple[float, float]] = []
+    if track:
+        track_xy = [(float(t[-2]), float(t[-1])) for t in track if len(t) >= 2]
+
+    result = EpisodeResult(
+        seed=seed,
+        pit_zone_xy=info.get("pit_zone_xy"),
+        track_xy=track_xy,
+    )
 
     done = False
     truncated = False
@@ -271,12 +295,11 @@ def plot_racing_line(
 
     fig, ax = plt.subplots(figsize=(8, 8))
 
-    track = getattr(env.unwrapped, "track", None)
-    if track:
-        # Last two elements of each tile are (x, y); tuple length varies
-        # across gym/gymnasium versions, so use negative indexing.
-        tx = [t[-2] for t in track] + [track[0][-2]]
-        ty = [t[-1] for t in track] + [track[0][-1]]
+    # Use the snapshot from THIS episode's reset, not env.unwrapped.track
+    # (which has been rebuilt by every subsequent reset).
+    if r.track_xy:
+        tx = [p[0] for p in r.track_xy] + [r.track_xy[0][0]]
+        ty = [p[1] for p in r.track_xy] + [r.track_xy[0][1]]
         ax.plot(tx, ty, color="lightgrey", linewidth=2, label="track")
 
     xs = [p[0] for p in r.trajectory]
@@ -381,6 +404,7 @@ def main() -> None:
         use_tire_model=not args.no_tire_model,
         max_laps=args.max_laps,
         max_episode_steps=args.max_episode_steps,
+        zoom=args.zoom,
     )
 
     print(f"Loading primary model: {args.model_path}")

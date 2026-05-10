@@ -19,6 +19,7 @@ tire-wear / lap / compound state. Requires `MultiInputPolicy` on the SB3 side.
 from __future__ import annotations
 
 import gymnasium as gym
+import gymnasium.envs.box2d.car_racing as _carracing_module
 import numpy as np
 from gymnasium import spaces
 
@@ -62,11 +63,28 @@ class PitwallRacingEnv(gym.Wrapper):
     PIT_MAX_SPEED_TO_TRIGGER: float = 1.0
     PIT_TIME_PENALTY: float = 50.0
 
+    # --- soft track-edge barrier (phase-1 training aid) --------------------
+    # Episode terminates if the car's distance to the nearest track tile
+    # exceeds OFFTRACK_TERMINATION_DISTANCE world units. CarRacing-v3's
+    # TRACK_WIDTH is ~6.7 (half-width ~3.3 from centerline), and the car
+    # hull is ~2 units wide. So 10 = track edge + ~3 car widths, i.e. a
+    # bit more than 1.5 car widths past the painted line. Cuts donut-on-
+    # grass episodes short and sharpens the "stay on track" signal.
+    # Pass `enforce_track_bounds=False` to disable for a final eval that
+    # measures the policy without training-wheels.
+    OFFTRACK_TERMINATION_DISTANCE: float = 10.0
+    OFFTRACK_TERMINATION_PENALTY: float = 25.0
+
     DEFAULT_COMPOUND: str = "medium"
     DEFAULT_MAX_LAPS: int = 3
     # CarRacing-v3 default time limit is 1000 steps — barely a single lap.
     # 5000 lets a competent driver finish ~3 laps.
     DEFAULT_MAX_EPISODE_STEPS: int = 5000
+    # Camera zoom. CarRacing-v3's hardcoded module default is 2.7 — quite
+    # tight on the car with little lookahead. We lower it to 1.5 by default
+    # so the agent sees more of the track ahead. Lower → wider view (track
+    # appears thinner); higher → tighter (more pixels per metre of road).
+    DEFAULT_ZOOM: float = 1.5
 
     def __init__(
         self,
@@ -75,11 +93,23 @@ class PitwallRacingEnv(gym.Wrapper):
         use_tire_model: bool = True,
         max_laps: int = DEFAULT_MAX_LAPS,
         max_episode_steps: int = DEFAULT_MAX_EPISODE_STEPS,
+        enforce_track_bounds: bool = True,
+        zoom: float = DEFAULT_ZOOM,
     ):
         if compound not in COMPOUNDS:
             raise ValueError(f"compound must be one of {COMPOUNDS}, got {compound!r}")
         if max_laps < 1:
             raise ValueError(f"max_laps must be >= 1, got {max_laps}")
+        if zoom <= 0:
+            raise ValueError(f"zoom must be > 0, got {zoom}")
+
+        # Patch the module-level ZOOM constant before gym.make. CarRacing's
+        # _render() looks up `ZOOM` in module scope each frame, so the patch
+        # takes effect immediately. With SubprocVecEnv, each worker imports
+        # its own copy of the module and patches it here in __init__, so all
+        # workers stay consistent.
+        _carracing_module.ZOOM = float(zoom)
+        self.zoom: float = float(zoom)
 
         env = gym.make(
             "CarRacing-v3",
@@ -93,12 +123,16 @@ class PitwallRacingEnv(gym.Wrapper):
         self.compound_id: int = COMPOUND_TO_ID[compound]
         self.use_tire_model: bool = use_tire_model
         self.max_laps: int = max_laps
+        self.enforce_track_bounds: bool = enforce_track_bounds
 
         self.tire_wear: float = 0.0
         self.lap_count: int = 0
         self._steps_this_lap: int = 0
         self._lap_times: list[int] = []
         self._pit_zone_xy: tuple[float, float] | None = None
+        # (N, 2) array of track-tile (x, y) coords, cached at reset to keep
+        # the per-step distance-to-track lookup vectorised.
+        self._track_xy: np.ndarray | None = None
 
         # Eagerly warm the tire-model cache so a missing artefact surfaces
         # at construction time rather than deep in the first step(). With
@@ -139,6 +173,7 @@ class PitwallRacingEnv(gym.Wrapper):
         self.lap_count = 0
         self._steps_this_lap = 0
         self._lap_times = []
+        self._cache_track_array()
         self._cache_pit_zone_position()
         info = dict(info)
         info["compound"] = self.compound
@@ -190,6 +225,20 @@ class PitwallRacingEnv(gym.Wrapper):
                 self._reset_track_tiles()
                 terminated = False
 
+        # --- soft track-edge barrier ---------------------------------------
+        # Don't override a lap-completion termination — completing the race
+        # while drifting off-track shouldn't be punished as a crash.
+        distance_to_track = self._distance_to_track()
+        offtrack_termination = False
+        if (
+            self.enforce_track_bounds
+            and not lap_completed_this_step
+            and distance_to_track > self.OFFTRACK_TERMINATION_DISTANCE
+        ):
+            terminated = True
+            reward -= self.OFFTRACK_TERMINATION_PENALTY
+            offtrack_termination = True
+
         # ------------------------------------------------------------------
         info = dict(info)
         info["tire_wear"] = self.tire_wear
@@ -200,6 +249,8 @@ class PitwallRacingEnv(gym.Wrapper):
         info["wear_delta"] = wear_delta
         info["lap_completed"] = lap_completed_this_step
         info["pit_zone_distance"] = self._pit_zone_distance()
+        info["distance_to_track"] = distance_to_track
+        info["offtrack_termination"] = offtrack_termination
         if lap_time is not None:
             info["lap_time_steps"] = lap_time
 
@@ -258,25 +309,45 @@ class PitwallRacingEnv(gym.Wrapper):
         load = (omega * speed) / self.CORNERING_LOAD_SCALE
         return float(np.clip(load, 0.0, 10.0))
 
-    def _cache_pit_zone_position(self) -> None:
-        """Read the pit-zone tile coords from the freshly-built track.
+    def _cache_track_array(self) -> None:
+        """Cache an (N, 2) ndarray of all track-tile (x, y) coords.
 
-        Each tile in `env.unwrapped.track` is a tuple whose last two
-        elements are the tile's (x, y) world coords. The exact tuple length
-        has varied across gym / gymnasium versions (4 in some, 5 in others),
-        so we use negative indexing rather than fixed positions. Tile 0 is
-        the spawn point. The track is regenerated on every `reset()`, so
-        this has to run after `self.env.reset(...)` returns.
+        Read from `env.unwrapped.track` after `self.env.reset()` returns. The
+        last two elements of each tuple are (x, y) regardless of the tuple's
+        full length (which varies across gym / gymnasium versions). Caching
+        keeps the per-step distance-to-track lookup vectorised.
         """
         track = getattr(self.env.unwrapped, "track", None)
-        if not track or self.PIT_TILE_INDEX >= len(track) or self.PIT_TILE_INDEX < 0:
+        if not track:
+            self._track_xy = None
+            return
+        try:
+            self._track_xy = np.array(
+                [[float(t[-2]), float(t[-1])] for t in track if len(t) >= 2],
+                dtype=np.float32,
+            )
+        except (TypeError, IndexError):
+            self._track_xy = None
+
+    def _cache_pit_zone_position(self) -> None:
+        """Pick the pit-zone tile coords from the cached track array."""
+        if self._track_xy is None or len(self._track_xy) == 0:
             self._pit_zone_xy = None
             return
-        tile = track[self.PIT_TILE_INDEX]
-        if len(tile) < 2:
+        if not (0 <= self.PIT_TILE_INDEX < len(self._track_xy)):
             self._pit_zone_xy = None
             return
-        self._pit_zone_xy = (float(tile[-2]), float(tile[-1]))
+        x, y = self._track_xy[self.PIT_TILE_INDEX]
+        self._pit_zone_xy = (float(x), float(y))
+
+    def _distance_to_track(self) -> float:
+        """Euclidean distance from the car's hull to the nearest track tile."""
+        car = self._car()
+        if car is None or self._track_xy is None or len(self._track_xy) == 0:
+            return 0.0
+        cx, cy = car.hull.position
+        diffs = self._track_xy - np.array([cx, cy], dtype=np.float32)
+        return float(np.linalg.norm(diffs, axis=1).min())
 
     def _pit_zone_distance(self) -> float:
         car = self._car()
