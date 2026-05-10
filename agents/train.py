@@ -35,9 +35,11 @@ from stable_baselines3.common.vec_env import (
     DummyVecEnv,
     SubprocVecEnv,
     VecEnv,
+    VecFrameStack,
     VecMonitor,
 )
 
+from agents.policy import PitwallFeaturesExtractor
 from environment import PitwallRacingEnv
 from tire_model import COMPOUNDS
 
@@ -90,7 +92,13 @@ def build_train_env(args: argparse.Namespace) -> VecEnv:
         vec = SubprocVecEnv([factory for _ in range(args.n_envs)])
     # VecMonitor wraps the VecEnv so per-episode reward / length get logged
     # to tensorboard automatically alongside PPO's own metrics.
-    return VecMonitor(vec)
+    monitored = VecMonitor(vec)
+    # VecFrameStack stacks the last `n_stack` observations along the channel
+    # axis so the policy can perceive motion / angular velocity. Works on
+    # Dict obs by stacking each subspace independently.
+    if args.frame_stack > 1:
+        return VecFrameStack(monitored, n_stack=args.frame_stack)
+    return monitored
 
 
 def build_eval_env(args: argparse.Namespace) -> VecEnv:
@@ -102,7 +110,10 @@ def build_eval_env(args: argparse.Namespace) -> VecEnv:
         max_episode_steps=args.max_episode_steps,
         zoom=args.zoom,
     )
-    return VecMonitor(DummyVecEnv([factory]))
+    monitored = VecMonitor(DummyVecEnv([factory]))
+    if args.frame_stack > 1:
+        return VecFrameStack(monitored, n_stack=args.frame_stack)
+    return monitored
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +160,10 @@ def make_or_resume_model(args: argparse.Namespace, train_env: VecEnv) -> PPO:
             device=args.device,
             print_system_info=False,
         )
+    policy_kwargs = dict(
+        features_extractor_class=PitwallFeaturesExtractor,
+        features_extractor_kwargs=dict(image_features_dim=args.features_dim),
+    )
     return PPO(
         "MultiInputPolicy",
         train_env,
@@ -164,6 +179,7 @@ def make_or_resume_model(args: argparse.Namespace, train_env: VecEnv) -> PPO:
         seed=args.seed,
         tensorboard_log=str(args.log_dir),
         device=args.device,
+        policy_kwargs=policy_kwargs,
         verbose=1,
     )
 
@@ -219,6 +235,13 @@ def parse_args() -> argparse.Namespace:
     g_ppo.add_argument("--clip-range", type=float, default=0.2)
     g_ppo.add_argument("--ent-coef", type=float, default=0.0)
     g_ppo.add_argument("--vf-coef", type=float, default=0.5)
+    g_ppo.add_argument("--frame-stack", type=int, default=4,
+                       help="Stack the last N frames so the policy can perceive motion. "
+                            "1 = no stacking. 4 is the CarRacing/Atari convention.")
+    g_ppo.add_argument("--features-dim", type=int, default=512,
+                       help="Image-branch feature dim out of the custom CNN. State-branch "
+                            "is fixed at 64 → total feature input to policy/value heads is "
+                            "features_dim + 64.")
 
     return p.parse_args()
 

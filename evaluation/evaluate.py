@@ -27,11 +27,26 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import (
+    DummyVecEnv,
+    VecEnv,
+    VecFrameStack,
+    VecMonitor,
+    VecTransposeImage,
+)
 
 from environment import PitwallRacingEnv
 from tire_model import COMPOUNDS
 
 CARRACING_FPS: int = 50  # CarRacing-v3 default; used for step → seconds.
+
+
+def _inner_env(vec_env: VecEnv) -> PitwallRacingEnv:
+    """Walk through VecEnv wrappers to get the innermost gym env (envs[0])."""
+    e = vec_env
+    while hasattr(e, "venv"):
+        e = e.venv
+    return e.envs[0]
 
 
 @dataclass
@@ -97,38 +112,56 @@ def parse_args() -> argparse.Namespace:
         help="Camera zoom. Should match training; mismatched zoom means the "
              "CNN sees a different visual distribution than it was trained on.",
     )
+    p.add_argument(
+        "--frame-stack",
+        type=int,
+        default=4,
+        help="Stack the last N frames (must match training).",
+    )
     return p.parse_args()
 
 
 # ---------------------------------------------------------------------------
 # Rollout
 # ---------------------------------------------------------------------------
-def run_episode(env: PitwallRacingEnv, model: PPO, seed: int) -> EpisodeResult:
-    obs, info = env.reset(seed=seed)
+def run_episode(env: VecEnv, model: PPO, seed: int) -> EpisodeResult:
+    inner = _inner_env(env)
+    underlying = inner.unwrapped  # CarRacing
 
-    # Snapshot the track for THIS episode's seed. Each future reset rebuilds
-    # `env.unwrapped.track`, so we can't read it back at plot time.
-    track = getattr(env.unwrapped, "track", None)
+    # SB3's VecEnv reset doesn't accept a seed kwarg; set it via .seed().
+    env.seed(seed)
+    obs = env.reset()
+
+    # Snapshot the track for THIS episode's seed.
+    track = getattr(underlying, "track", None)
     track_xy: list[tuple[float, float]] = []
     if track:
         track_xy = [(float(t[-2]), float(t[-1])) for t in track if len(t) >= 2]
 
+    # VecEnv reset doesn't return info, so read pit-zone xy from the wrapper
+    # directly (set by PitwallRacingEnv._cache_pit_zone_position during reset).
+    pit_zone_xy = getattr(inner, "_pit_zone_xy", None)
+
     result = EpisodeResult(
         seed=seed,
-        pit_zone_xy=info.get("pit_zone_xy"),
+        pit_zone_xy=pit_zone_xy,
         track_xy=track_xy,
     )
 
     done = False
-    truncated = False
-    while not (done or truncated):
-        action, _ = model.predict(obs, deterministic=True)
-        obs, reward, done, truncated, info = env.step(action)
-        result.total_reward += float(reward)
+    while not done:
+        actions, _ = model.predict(obs, deterministic=True)
+        obs, rewards, dones, infos = env.step(actions)
+        # n_envs is always 1 here; index [0] to unbatch.
+        reward = float(rewards[0])
+        info = infos[0]
+        done = bool(dones[0])
+
+        result.total_reward += reward
         result.n_steps += 1
         result.wear_trace.append(float(info.get("tire_wear", 0.0)))
 
-        car = getattr(env.unwrapped, "car", None)
+        car = getattr(underlying, "car", None)
         if car is not None:
             v = car.hull.linearVelocity
             result.speed_trace.append(float(np.hypot(v[0], v[1])))
@@ -351,7 +384,7 @@ def plot_reward_hist(
 # Driver
 # ---------------------------------------------------------------------------
 def evaluate_model(
-    env: PitwallRacingEnv,
+    env: VecEnv,
     model: PPO,
     n_episodes: int,
     base_seed: int,
@@ -377,13 +410,14 @@ def evaluate_model(
 
 def write_artefacts(
     results: list[EpisodeResult],
-    env: PitwallRacingEnv,
+    env: VecEnv,
     output_dir: Path,
     prefix: str = "",
 ) -> None:
-    plot_wear_traces(results, env, output_dir / f"{prefix}tire_wear.png")
+    inner = _inner_env(env)
+    plot_wear_traces(results, inner, output_dir / f"{prefix}tire_wear.png")
     plot_per_lap_wear(results, output_dir / f"{prefix}per_lap_wear.png")
-    plot_racing_line(results, env, output_dir / f"{prefix}racing_line.png")
+    plot_racing_line(results, inner, output_dir / f"{prefix}racing_line.png")
     plot_reward_hist(results, output_dir / f"{prefix}reward_hist.png")
 
 
@@ -398,14 +432,25 @@ def main() -> None:
     if args.baseline_path is not None and not args.baseline_path.exists():
         raise FileNotFoundError(f"No baseline checkpoint at {args.baseline_path}.")
 
-    env = PitwallRacingEnv(
-        render_mode=None,
-        compound=args.compound,
-        use_tire_model=not args.no_tire_model,
-        max_laps=args.max_laps,
-        max_episode_steps=args.max_episode_steps,
-        zoom=args.zoom,
+    def _factory() -> PitwallRacingEnv:
+        return PitwallRacingEnv(
+            render_mode=None,
+            compound=args.compound,
+            use_tire_model=not args.no_tire_model,
+            max_laps=args.max_laps,
+            max_episode_steps=args.max_episode_steps,
+            zoom=args.zoom,
+        )
+
+    monitored = VecMonitor(DummyVecEnv([_factory]))
+    stacked: VecEnv = (
+        VecFrameStack(monitored, n_stack=args.frame_stack)
+        if args.frame_stack > 1
+        else monitored
     )
+    # PPO auto-wraps with VecTransposeImage during training. We mirror that
+    # here so the obs layout exactly matches what the saved policy expects.
+    env: VecEnv = VecTransposeImage(stacked)
 
     print(f"Loading primary model: {args.model_path}")
     model = PPO.load(args.model_path)
