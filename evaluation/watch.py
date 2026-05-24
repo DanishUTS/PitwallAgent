@@ -84,6 +84,23 @@ def parse_args() -> argparse.Namespace:
         help="Stack the last N frames (must match training).",
     )
     p.add_argument(
+        "--fixed-track-seed",
+        type=int,
+        default=None,
+        help="If set, force every reset to use this seed.",
+    )
+    p.add_argument(
+        "--waypoint-bonus",
+        type=float,
+        default=PitwallRacingEnv.WAYPOINT_BONUS_DEFAULT,
+        help="Waypoint bonus during the watch session.",
+    )
+    p.add_argument(
+        "--enforce-track-bounds",
+        action="store_true",
+        help="Enable the hard off-track termination barrier. Off by default.",
+    )
+    p.add_argument(
         "--deterministic",
         action="store_true",
         default=True,
@@ -112,6 +129,9 @@ def main() -> None:
             max_laps=args.max_laps,
             max_episode_steps=args.max_episode_steps,
             zoom=args.zoom,
+            fixed_track_seed=args.fixed_track_seed,
+            waypoint_bonus=args.waypoint_bonus,
+            enforce_track_bounds=args.enforce_track_bounds,
         )
 
     monitored = VecMonitor(DummyVecEnv([_factory]))

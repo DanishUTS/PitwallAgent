@@ -11,6 +11,16 @@ Wraps Gymnasium's `CarRacing-v3` and adds:
   * a multi-lap wrapper: detects lap completion via CarRacing's
     `tile_visited_count`, resets tile flags so the agent can keep racing,
     and terminates after `max_laps`
+  * reshaped reward (phase-1 retraining): +LAP_COMPLETION_BONUS on each
+    completed lap, -SOFT_OFFTRACK_PENALTY/step when distance to nearest
+    track tile exceeds SOFT_OFFTRACK_DISTANCE, and a stagnation-termination
+    that ends the episode if `tile_visited_count` hasn't grown in
+    STAGNATION_THRESHOLD_STEPS steps. The hard off-track barrier is
+    disabled by default (re-enable via `enforce_track_bounds=True`).
+  * optional waypoint bonuses (disabled by default, opt in via
+    `waypoint_bonus > 0`).
+  * optional fixed-track curriculum (`fixed_track_seed=N`) so all envs
+    reset to the same track every episode.
 
 Observation is a Dict so the RL agent can see the camera frame and the
 tire-wear / lap / compound state. Requires `MultiInputPolicy` on the SB3 side.
@@ -63,17 +73,43 @@ class PitwallRacingEnv(gym.Wrapper):
     PIT_MAX_SPEED_TO_TRIGGER: float = 1.0
     PIT_TIME_PENALTY: float = 50.0
 
-    # --- soft track-edge barrier (phase-1 training aid) --------------------
-    # Episode terminates if the car's distance to the nearest track tile
-    # exceeds OFFTRACK_TERMINATION_DISTANCE world units. CarRacing-v3's
-    # TRACK_WIDTH is ~6.7 (half-width ~3.3 from centerline), and the car
-    # hull is ~2 units wide. So 10 = track edge + ~3 car widths, i.e. a
-    # bit more than 1.5 car widths past the painted line. Cuts donut-on-
-    # grass episodes short and sharpens the "stay on track" signal.
-    # Pass `enforce_track_bounds=False` to disable for a final eval that
-    # measures the policy without training-wheels.
-    OFFTRACK_TERMINATION_DISTANCE: float = 10.0
+    # --- off-track penalty + barrier ---------------------------------------
+    # Two-tier off-track handling:
+    #   (a) Soft penalty: -SOFT_OFFTRACK_PENALTY per step when distance to
+    #       the nearest track tile exceeds SOFT_OFFTRACK_DISTANCE (~track
+    #       edge). Mild gradient signal "grass is bad" that doesn't kill
+    #       the episode.
+    #   (b) Hard barrier: terminate at OFFTRACK_TERMINATION_DISTANCE with
+    #       -OFFTRACK_TERMINATION_PENALTY. **Disabled by default** because
+    #       earlier runs showed it firing mid-corner and preventing
+    #       recovery. CarRacing's own playfield boundary still catches
+    #       genuinely-lost cases. Re-enable with enforce_track_bounds=True.
+    SOFT_OFFTRACK_DISTANCE: float = 3.0
+    SOFT_OFFTRACK_PENALTY: float = 0.1
+    OFFTRACK_TERMINATION_DISTANCE: float = 18.0
     OFFTRACK_TERMINATION_PENALTY: float = 25.0
+
+    # --- progress incentive ------------------------------------------------
+    # Big terminal-style bonus when a lap completes so PPO's value function
+    # has a clear "goal" to assign credit toward. +200 ≈ 20% of the base
+    # +1000 lap reward (tile visits) — meaningful without dominating.
+    LAP_COMPLETION_BONUS: float = 200.0
+
+    # --- stagnation termination --------------------------------------------
+    # If the agent's `tile_visited_count` hasn't increased in N steps, the
+    # episode terminates with -STAGNATION_PENALTY. Kills the "spin in place
+    # on track" failure mode — at 50 FPS, 300 steps ≈ 6 seconds of zero
+    # progress. Set STAGNATION_THRESHOLD_STEPS to None / 0 to disable.
+    STAGNATION_THRESHOLD_STEPS: int = 300
+    STAGNATION_PENALTY: float = 25.0
+
+    # --- waypoint bonuses (disabled by default, kept for ablation) ---------
+    # 8 evenly-spaced points around the track. **Disabled by default**
+    # (WAYPOINT_BONUS_DEFAULT = 0) — extra reward signal added confusion
+    # without measurable benefit. Re-enable by passing waypoint_bonus > 0.
+    WAYPOINT_COUNT: int = 8
+    WAYPOINT_BONUS_DEFAULT: float = 0.0
+    WAYPOINT_RADIUS: float = 8.0
 
     DEFAULT_COMPOUND: str = "medium"
     DEFAULT_MAX_LAPS: int = 3
@@ -84,7 +120,7 @@ class PitwallRacingEnv(gym.Wrapper):
     # tight on the car with little lookahead. We lower it to 1.5 by default
     # so the agent sees more of the track ahead. Lower → wider view (track
     # appears thinner); higher → tighter (more pixels per metre of road).
-    DEFAULT_ZOOM: float = 1.0
+    DEFAULT_ZOOM: float = 1.5
 
     def __init__(
         self,
@@ -93,8 +129,10 @@ class PitwallRacingEnv(gym.Wrapper):
         use_tire_model: bool = True,
         max_laps: int = DEFAULT_MAX_LAPS,
         max_episode_steps: int = DEFAULT_MAX_EPISODE_STEPS,
-        enforce_track_bounds: bool = True,
+        enforce_track_bounds: bool = False,
         zoom: float = DEFAULT_ZOOM,
+        fixed_track_seed: int | None = None,
+        waypoint_bonus: float = WAYPOINT_BONUS_DEFAULT,
     ):
         if compound not in COMPOUNDS:
             raise ValueError(f"compound must be one of {COMPOUNDS}, got {compound!r}")
@@ -102,6 +140,8 @@ class PitwallRacingEnv(gym.Wrapper):
             raise ValueError(f"max_laps must be >= 1, got {max_laps}")
         if zoom <= 0:
             raise ValueError(f"zoom must be > 0, got {zoom}")
+        if waypoint_bonus < 0:
+            raise ValueError(f"waypoint_bonus must be >= 0, got {waypoint_bonus}")
 
         # Patch the module-level ZOOM constant before gym.make. CarRacing's
         # _render() looks up `ZOOM` in module scope each frame, so the patch
@@ -124,6 +164,8 @@ class PitwallRacingEnv(gym.Wrapper):
         self.use_tire_model: bool = use_tire_model
         self.max_laps: int = max_laps
         self.enforce_track_bounds: bool = enforce_track_bounds
+        self.fixed_track_seed: int | None = fixed_track_seed
+        self.waypoint_bonus: float = float(waypoint_bonus)
 
         self.tire_wear: float = 0.0
         self.lap_count: int = 0
@@ -133,6 +175,17 @@ class PitwallRacingEnv(gym.Wrapper):
         # (N, 2) array of track-tile (x, y) coords, cached at reset to keep
         # the per-step distance-to-track lookup vectorised.
         self._track_xy: np.ndarray | None = None
+        # (WAYPOINT_COUNT, 2) array of waypoint coords, picked from
+        # _track_xy at reset. None if track is too short or not yet built.
+        self._waypoints_xy: np.ndarray | None = None
+        # Indices of waypoints already claimed in the current lap. Cleared
+        # at reset and on each lap completion.
+        self._waypoints_hit_this_lap: set[int] = set()
+        # Stagnation tracking. We watch `env.unwrapped.tile_visited_count`
+        # — if it stops growing for STAGNATION_THRESHOLD_STEPS, the agent
+        # has stopped making progress and we terminate the episode.
+        self._last_tile_count: int = 0
+        self._steps_since_progress: int = 0
 
         # Eagerly warm the tire-model cache so a missing artefact surfaces
         # at construction time rather than deep in the first step(). With
@@ -161,6 +214,11 @@ class PitwallRacingEnv(gym.Wrapper):
 
     # ------------------------------------------------------------------ API
     def reset(self, *, seed: int | None = None, options: dict | None = None):
+        # Curriculum override: when fixed_track_seed is set, force the same
+        # seed every reset so all VecEnv workers run the identical track.
+        if self.fixed_track_seed is not None:
+            seed = self.fixed_track_seed
+
         # Pop our wrapper-specific keys so we don't pass them to the
         # underlying CarRacing env. Allow `options={"compound": "soft"}` to
         # switch compound per episode.
@@ -173,12 +231,17 @@ class PitwallRacingEnv(gym.Wrapper):
         self.lap_count = 0
         self._steps_this_lap = 0
         self._lap_times = []
+        self._waypoints_hit_this_lap = set()
+        self._last_tile_count = 0
+        self._steps_since_progress = 0
         self._cache_track_array()
         self._cache_pit_zone_position()
         info = dict(info)
         info["compound"] = self.compound
         if self._pit_zone_xy is not None:
             info["pit_zone_xy"] = self._pit_zone_xy
+        if self._waypoints_xy is not None:
+            info["waypoints_xy"] = self._waypoints_xy.copy()
         return self._obs(obs), info
 
     def step(self, action):
@@ -205,12 +268,18 @@ class PitwallRacingEnv(gym.Wrapper):
         # --- lap detection --------------------------------------------------
         lap_completed_this_step = False
         lap_time = None
+        lap_bonus = 0.0
         if self._all_tiles_visited():
             lap_completed_this_step = True
             self.lap_count += 1
             lap_time = self._steps_this_lap
             self._lap_times.append(lap_time)
             self._steps_this_lap = 0
+
+            # Big terminal-style bonus: gives PPO's value function a clear
+            # goal to assign credit toward.
+            lap_bonus = self.LAP_COMPLETION_BONUS
+            reward += lap_bonus
 
             if self.lap_count >= self.max_laps:
                 # Final lap: end the episode regardless of what the underlying
@@ -224,20 +293,77 @@ class PitwallRacingEnv(gym.Wrapper):
                 # it sets when all tiles have been visited).
                 self._reset_track_tiles()
                 terminated = False
+            # Each lap can re-collect the waypoint bonuses.
+            self._waypoints_hit_this_lap.clear()
+            # A completed lap resets the stagnation counter — the
+            # tile_visited_count just reset to 0, so what we read on the
+            # next step is intentionally lower than _last_tile_count.
+            self._last_tile_count = 0
+            self._steps_since_progress = 0
 
-        # --- soft track-edge barrier ---------------------------------------
-        # Don't override a lap-completion termination — completing the race
-        # while drifting off-track shouldn't be punished as a crash.
-        distance_to_track = self._distance_to_track()
-        offtrack_termination = False
+        # --- progress / stagnation tracking --------------------------------
+        # The underlying env increments tile_visited_count each time the car
+        # rolls over a fresh tile. If it stays flat for STAGNATION_THRESHOLD
+        # steps, the agent has stopped progressing — terminate the episode.
+        # We don't track stagnation on the same step a lap just completed
+        # (tile_visited_count was just reset to 0 by _reset_track_tiles).
+        stagnation_termination = False
+        if not lap_completed_this_step:
+            current_tile_count = getattr(
+                self.env.unwrapped, "tile_visited_count", self._last_tile_count
+            )
+            if current_tile_count > self._last_tile_count:
+                self._last_tile_count = current_tile_count
+                self._steps_since_progress = 0
+            else:
+                self._steps_since_progress += 1
+            if (
+                self.STAGNATION_THRESHOLD_STEPS > 0
+                and self._steps_since_progress >= self.STAGNATION_THRESHOLD_STEPS
+            ):
+                terminated = True
+                reward -= self.STAGNATION_PENALTY
+                stagnation_termination = True
+
+        # --- waypoint bonus (disabled by default; opt in via constructor) --
+        waypoint_bonus = 0.0
         if (
-            self.enforce_track_bounds
-            and not lap_completed_this_step
-            and distance_to_track > self.OFFTRACK_TERMINATION_DISTANCE
+            self._waypoints_xy is not None
+            and self.waypoint_bonus > 0
         ):
-            terminated = True
-            reward -= self.OFFTRACK_TERMINATION_PENALTY
-            offtrack_termination = True
+            car = self._car()
+            if car is not None:
+                cx, cy = car.hull.position
+                diffs = self._waypoints_xy - np.array([cx, cy], dtype=np.float32)
+                dists = np.linalg.norm(diffs, axis=1)
+                for idx in range(len(dists)):
+                    if (
+                        idx not in self._waypoints_hit_this_lap
+                        and dists[idx] < self.WAYPOINT_RADIUS
+                    ):
+                        self._waypoints_hit_this_lap.add(idx)
+                        waypoint_bonus += self.waypoint_bonus
+        reward += waypoint_bonus
+
+        # --- off-track penalty / barrier -----------------------------------
+        # Two-tier:
+        #   (a) Soft per-step penalty when on grass (distance > soft threshold)
+        #   (b) Hard termination at the barrier distance (off by default)
+        # Don't punish on a lap-completion step.
+        distance_to_track = self._distance_to_track()
+        soft_offtrack_penalty = 0.0
+        offtrack_termination = False
+        if not lap_completed_this_step:
+            if distance_to_track > self.SOFT_OFFTRACK_DISTANCE:
+                soft_offtrack_penalty = self.SOFT_OFFTRACK_PENALTY
+                reward -= soft_offtrack_penalty
+            if (
+                self.enforce_track_bounds
+                and distance_to_track > self.OFFTRACK_TERMINATION_DISTANCE
+            ):
+                terminated = True
+                reward -= self.OFFTRACK_TERMINATION_PENALTY
+                offtrack_termination = True
 
         # ------------------------------------------------------------------
         info = dict(info)
@@ -248,9 +374,15 @@ class PitwallRacingEnv(gym.Wrapper):
         info["cornering_load"] = cornering_load
         info["wear_delta"] = wear_delta
         info["lap_completed"] = lap_completed_this_step
+        info["lap_bonus"] = lap_bonus
         info["pit_zone_distance"] = self._pit_zone_distance()
         info["distance_to_track"] = distance_to_track
+        info["soft_offtrack_penalty"] = soft_offtrack_penalty
         info["offtrack_termination"] = offtrack_termination
+        info["stagnation_termination"] = stagnation_termination
+        info["steps_since_progress"] = self._steps_since_progress
+        info["waypoint_bonus"] = waypoint_bonus
+        info["waypoints_hit"] = len(self._waypoints_hit_this_lap)
         if lap_time is not None:
             info["lap_time_steps"] = lap_time
 
@@ -310,7 +442,8 @@ class PitwallRacingEnv(gym.Wrapper):
         return float(np.clip(load, 0.0, 10.0))
 
     def _cache_track_array(self) -> None:
-        """Cache an (N, 2) ndarray of all track-tile (x, y) coords.
+        """Cache an (N, 2) ndarray of all track-tile (x, y) coords + pick the
+        waypoint subset.
 
         Read from `env.unwrapped.track` after `self.env.reset()` returns. The
         last two elements of each tuple are (x, y) regardless of the tuple's
@@ -320,6 +453,7 @@ class PitwallRacingEnv(gym.Wrapper):
         track = getattr(self.env.unwrapped, "track", None)
         if not track:
             self._track_xy = None
+            self._waypoints_xy = None
             return
         try:
             self._track_xy = np.array(
@@ -328,6 +462,19 @@ class PitwallRacingEnv(gym.Wrapper):
             )
         except (TypeError, IndexError):
             self._track_xy = None
+            self._waypoints_xy = None
+            return
+
+        # Pick WAYPOINT_COUNT evenly-spaced waypoints. Skipping the first
+        # tile (index 0 = spawn / pit zone) so a waypoint doesn't overlap
+        # the pit-zone disc.
+        n_tiles = len(self._track_xy)
+        if n_tiles >= 2 * self.WAYPOINT_COUNT:
+            step = n_tiles // self.WAYPOINT_COUNT
+            indices = [(i + 1) * step % n_tiles for i in range(self.WAYPOINT_COUNT)]
+            self._waypoints_xy = self._track_xy[indices].copy()
+        else:
+            self._waypoints_xy = None
 
     def _cache_pit_zone_position(self) -> None:
         """Pick the pit-zone tile coords from the cached track array."""
