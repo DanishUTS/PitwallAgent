@@ -53,12 +53,15 @@ def make_env_factory(
     max_laps: int,
     max_episode_steps: int,
     zoom: float,
+    fixed_track_seed: int | None,
+    waypoint_bonus: float,
+    enforce_track_bounds: bool,
 ):
     """Return a zero-arg factory that builds a fresh PitwallRacingEnv.
 
     Used by both DummyVecEnv (in-process) and SubprocVecEnv (subprocesses).
-    The closure captures simple types only (str, bool, int, float) — all
-    pickle cleanly via cloudpickle, which SubprocVecEnv uses.
+    The closure captures simple types only (str, bool, int, float, None) —
+    all pickle cleanly via cloudpickle, which SubprocVecEnv uses.
     """
 
     def _make() -> PitwallRacingEnv:
@@ -69,6 +72,9 @@ def make_env_factory(
             max_laps=max_laps,
             max_episode_steps=max_episode_steps,
             zoom=zoom,
+            fixed_track_seed=fixed_track_seed,
+            waypoint_bonus=waypoint_bonus,
+            enforce_track_bounds=enforce_track_bounds,
         )
 
     return _make
@@ -81,6 +87,9 @@ def build_train_env(args: argparse.Namespace) -> VecEnv:
         max_laps=args.max_laps,
         max_episode_steps=args.max_episode_steps,
         zoom=args.zoom,
+        fixed_track_seed=args.fixed_track_seed,
+        waypoint_bonus=args.waypoint_bonus,
+        enforce_track_bounds=args.enforce_track_bounds,
     )
     if args.n_envs <= 1:
         # Single-env: DummyVecEnv keeps everything in-process. Faster setup,
@@ -109,6 +118,9 @@ def build_eval_env(args: argparse.Namespace) -> VecEnv:
         max_laps=args.max_laps,
         max_episode_steps=args.max_episode_steps,
         zoom=args.zoom,
+        fixed_track_seed=args.fixed_track_seed,
+        waypoint_bonus=args.waypoint_bonus,
+        enforce_track_bounds=args.enforce_track_bounds,
     )
     monitored = VecMonitor(DummyVecEnv([factory]))
     if args.frame_stack > 1:
@@ -153,17 +165,40 @@ def make_or_resume_model(args: argparse.Namespace, train_env: VecEnv) -> PPO:
         if not args.resume.exists():
             raise FileNotFoundError(f"--resume checkpoint not found: {args.resume}")
         print(f"Resuming from {args.resume}")
+        # SB3's PPO.load deserialises hyperparameters from the .zip, so by
+        # default the CLI values would be silently ignored on resume.
+        # `custom_objects` lets us replace specific attributes during
+        # deserialisation. We override only the three commonly-tuned
+        # hyperparameters; architectural ones (n_steps, batch_size,
+        # network size) stay baked into the checkpoint to avoid optimiser
+        # / buffer-shape mismatches.
+        custom_objects = {
+            "ent_coef": args.ent_coef,
+            "learning_rate": args.learning_rate,
+            "clip_range": args.clip_range,
+        }
+        print(
+            f"  overriding from CLI: ent_coef={args.ent_coef}, "
+            f"learning_rate={args.learning_rate}, clip_range={args.clip_range}"
+        )
         return PPO.load(
             args.resume,
             env=train_env,
             tensorboard_log=str(args.log_dir),
             device=args.device,
             print_system_info=False,
+            custom_objects=custom_objects,
         )
-    policy_kwargs = dict(
-        features_extractor_class=PitwallFeaturesExtractor,
-        features_extractor_kwargs=dict(image_features_dim=args.features_dim),
-    )
+    # Default: use SB3's built-in NatureCNN-based CombinedExtractor for Dict
+    # obs (smaller, well-tested for CarRacing). Pass --use-custom-cnn to opt
+    # into the larger PitwallFeaturesExtractor (more capacity, slower to
+    # train, and tends to overfit our shaped rewards).
+    policy_kwargs: dict | None = None
+    if args.use_custom_cnn:
+        policy_kwargs = dict(
+            features_extractor_class=PitwallFeaturesExtractor,
+            features_extractor_kwargs=dict(image_features_dim=args.features_dim),
+        )
     return PPO(
         "MultiInputPolicy",
         train_env,
@@ -199,7 +234,10 @@ def parse_args() -> argparse.Namespace:
     g_train.add_argument("--seed", type=int, default=0)
     g_train.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     g_train.add_argument("--resume", type=Path, default=None,
-                         help="Resume from this checkpoint instead of starting fresh.")
+                         help="Resume from this checkpoint. ent_coef / learning_rate / "
+                              "clip_range from the CLI override the checkpoint's saved "
+                              "values; all other hyperparameters are loaded from the "
+                              "checkpoint to keep optimiser state consistent.")
     g_train.add_argument("--no-progress-bar", action="store_true")
 
     g_io = p.add_argument_group("output paths")
@@ -223,6 +261,18 @@ def parse_args() -> argparse.Namespace:
     g_env.add_argument("--zoom", type=float, default=PitwallRacingEnv.DEFAULT_ZOOM,
                        help="Camera zoom. Lower = wider view (more lookahead). "
                             "gymnasium's CarRacing default is 2.7; we default to 1.5.")
+    g_env.add_argument("--fixed-track-seed", type=int, default=None,
+                       help="If set, every reset uses this seed so all envs run the same "
+                            "track every episode. Use for phase-1 curriculum (learn one "
+                            "track), then resume without the flag to generalise.")
+    g_env.add_argument("--waypoint-bonus", type=float,
+                       default=PitwallRacingEnv.WAYPOINT_BONUS_DEFAULT,
+                       help="Reward bonus when the car drives over one of the 8 waypoints "
+                            "(once per lap each). 0 = disabled (the current default).")
+    g_env.add_argument("--enforce-track-bounds", action="store_true",
+                       help="Enable the hard off-track termination barrier "
+                            "(OFFTRACK_TERMINATION_DISTANCE). Off by default. "
+                            "The soft per-step off-track penalty is always active.")
 
     g_ppo = p.add_argument_group("PPO hyperparameters (defaults from SB3 zoo CarRacing recipe)")
     g_ppo.add_argument("--learning-rate", type=float, default=3e-4)
@@ -238,10 +288,14 @@ def parse_args() -> argparse.Namespace:
     g_ppo.add_argument("--frame-stack", type=int, default=4,
                        help="Stack the last N frames so the policy can perceive motion. "
                             "1 = no stacking. 4 is the CarRacing/Atari convention.")
+    g_ppo.add_argument("--use-custom-cnn", action="store_true",
+                       help="Use the larger PitwallFeaturesExtractor (64-128-128 channels, "
+                            "~6M conv params) instead of SB3's default NatureCNN "
+                            "(32-64-64, ~1.7M params). Default off — the smaller default "
+                            "trains faster and is the standard CarRacing config.")
     g_ppo.add_argument("--features-dim", type=int, default=512,
-                       help="Image-branch feature dim out of the custom CNN. State-branch "
-                            "is fixed at 64 → total feature input to policy/value heads is "
-                            "features_dim + 64.")
+                       help="Image-branch feature dim — only used when --use-custom-cnn "
+                            "is set. State-branch is fixed at 64.")
 
     return p.parse_args()
 
