@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description"
-        content="Pitwall — F1-inspired autonomous racing with reinforcement learning and a supervised tire-degradation model. UTS 41118 AI in Robotics group project.">
+        content="Pitwall. F1 inspired autonomous racing with reinforcement learning and a supervised tire degradation model. UTS 41118 AI in Robotics group project.">
   <meta name="keywords" content="41118, UTS, reinforcement learning, PPO, F1, tire degradation, pit strategy, CarRacing">
-  <title>Pitwall — AI-driven F1 pit strategy</title>
+  <title>Pitwall: AI driven F1 pit strategy</title>
 
   <link href="https://fonts.googleapis.com/css?family=Titillium+Web:400,600,700,900|JetBrains+Mono:400,500,700"
         rel="stylesheet">
@@ -183,15 +183,15 @@
     /* Cards (subsystems) */
     .subsystem-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.2rem;
       margin-top: 2rem;
     }
     .subsystem-card {
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-left: 3px solid var(--accent-red);
-      padding: 1.8rem 1.6rem;
+      padding: 1.4rem 1.3rem;
       border-radius: 6px;
       transition: all 0.2s ease;
       position: relative;
@@ -212,7 +212,7 @@
     }
     .subsystem-card h3 {
       color: var(--text-primary);
-      font-size: 1.4rem;
+      font-size: 1.2rem;
       font-weight: 700;
       margin: 0 0 0.6rem 0;
     }
@@ -222,7 +222,7 @@
       color: var(--text-muted);
       margin-bottom: 1rem;
     }
-    .subsystem-card p { color: var(--text-secondary); font-size: 0.94rem; }
+    .subsystem-card p { color: var(--text-secondary); font-size: 0.88rem; }
     .subsystem-card ul {
       list-style: none;
       padding: 0;
@@ -231,7 +231,8 @@
     .subsystem-card ul li {
       padding: 0.25rem 0 0.25rem 1.2rem;
       position: relative;
-      font-size: 0.9rem;
+      font-size: 0.84rem;
+      line-height: 1.45;
     }
     .subsystem-card ul li::before {
       content: '\f0fb';
@@ -382,20 +383,6 @@
       border-color: var(--accent-red);
       transform: translateY(-2px);
     }
-    .team-card .avatar {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--accent-red), var(--accent-red-soft));
-      margin: 0 auto 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 1.8rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
     .team-card h4 {
       color: var(--text-primary);
       font-size: 1.1rem;
@@ -459,6 +446,9 @@
       background: var(--bg-secondary);
     }
 
+    @media (max-width: 1100px) {
+      .subsystem-grid { grid-template-columns: repeat(2, 1fr); }
+    }
     @media (max-width: 720px) {
       .pitwall-title { font-size: 2.6rem; }
       .pitwall-subtitle { font-size: 1rem; }
@@ -477,17 +467,17 @@
     <div class="pitwall-banner">UTS 41118 · AI in Robotics</div>
     <h1 class="pitwall-title">Pit<span class="accent">wall</span></h1>
     <p class="pitwall-subtitle">
-      An F1-inspired autonomous racing simulator. A reinforcement-learning agent
-      learns to race a multi-lap track while a separate supervised model predicts
-      tire degradation in real time — minimising total race time by trading raw
-      speed for tire strategy and pit stops.
+      An F1 inspired autonomous racing simulator. A reinforcement learning agent
+      learns to race a multi lap track while a separate supervised model predicts
+      tire degradation in real time. The objective is to minimise total race time
+      by trading raw speed for tire strategy and pit stops.
     </p>
 
     <div class="publication-authors">
       <span class="author-block">Danish Silva</span> ·
-      <span class="author-block">Hari</span> ·
-      <span class="author-block">Ben</span> ·
-      <span class="author-block">Dennis</span>
+      <span class="author-block">Hari Mahadevan</span> ·
+      <span class="author-block">Ben Costarella</span> ·
+      <span class="author-block">Dennis Asante</span>
     </div>
     <div class="publication-authors">
       <span class="author-block" style="font-size: 0.9rem; color: var(--text-muted);">
@@ -510,7 +500,7 @@
       </a>
       <a href="#iteration" class="button is-pitwall">
         <span class="icon"><i class="fas fa-history"></i></span>
-        <span>Iteration log</span>
+        <span>Iteration Log</span>
       </a>
       <a href="#results" class="button is-pitwall">
         <span class="icon"><i class="fas fa-chart-line"></i></span>
@@ -562,29 +552,29 @@
         <h2 class="title is-3 has-text-centered">Abstract</h2>
         <div class="content has-text-justified">
           <p>
-            <strong style="color: var(--text-primary);">Pitwall</strong> is a research-grade racing
+            <strong style="color: var(--text-primary);">Pitwall</strong> is a research grade racing
             simulator that combines two distinct AI components in a single closed loop. The
-            simulation environment extends Gymnasium's <code>CarRacing-v3</code> with multi-lap
-            race semantics, three tire compounds (soft / medium / hard), a pit-lane trigger zone,
+            simulation environment extends Gymnasium's <code>CarRacing-v3</code> with multi lap
+            race semantics, three tire compounds (soft, medium, hard), a pit lane trigger zone,
             and a custom reward function shaped for racing strategy. A <strong>Proximal Policy
-            Optimisation (PPO)</strong> agent learns to drive the car from a 96×96 top-down camera
-            feed; a separate <strong>gradient-boosting regression model</strong> trained on
-            stylised F1 tire physics predicts the per-step wear rate as a function of speed,
+            Optimisation (PPO)</strong> agent learns to drive the car from a 96×96 top down camera
+            feed. A separate <strong>gradient boosting regression model</strong> trained on
+            stylised F1 tire physics predicts the per step wear rate as a function of speed,
             cornering load, current wear, and the chosen compound.
           </p>
           <p>
-            The two components close the loop inside the env: each simulation step, the env reads
+            The two components close the loop inside the env. Each simulation step, the env reads
             the car's dynamics, queries the tire model for a wear delta, accumulates it into the
             agent's state vector, and applies reward shaping for strategy decisions (pit
-            timing, lap completion, off-track behaviour). The agent therefore learns not only
-            <em>how</em> to drive — staying on the racing line, hitting apexes — but also
+            timing, lap completion, off track behaviour). The agent therefore learns not only
+            <em>how</em> to drive (staying on the racing line, hitting apexes) but also
             <em>when</em> to pit, treating tire degradation as a managed resource.
           </p>
           <p>
             Beyond the AI itself, Pitwall ships a complete training and evaluation harness:
-            parallel sub-process environments, held-out evaluation callbacks, racing-line
-            visualisations, pit-strategy comparison tables, and an A/B mode that pits a
-            tire-aware agent against a no-strategy baseline on identical track seeds.
+            parallel sub process environments, held out evaluation callbacks, racing line
+            visualisations, pit strategy comparison tables, and an A/B mode that pits a
+            tire aware agent against a no strategy baseline on identical track seeds.
           </p>
         </div>
       </div>
@@ -600,29 +590,25 @@
   <div class="container is-max-desktop">
     <h2 class="title is-3 has-text-centered">Team</h2>
     <p class="has-text-centered" style="margin-bottom: 1.5rem;">
-      Each member owns one subsystem of the project end-to-end.
+      Each member owns one subsystem of the project end to end.
     </p>
 
     <div class="team-grid">
       <div class="team-card">
-        <div class="avatar">D</div>
         <h4>Danish</h4>
-        <div class="role">System architecture · RL agent</div>
+        <div class="role">System Architecture · RL Agent</div>
       </div>
       <div class="team-card">
-        <div class="avatar">H</div>
         <h4>Hari</h4>
-        <div class="role">Environment · custom mechanics</div>
+        <div class="role">Environment · Custom Mechanics</div>
       </div>
       <div class="team-card">
-        <div class="avatar">B</div>
         <h4>Ben</h4>
-        <div class="role">Tire model · synthetic data</div>
+        <div class="role">Tire Model · Synthetic Data</div>
       </div>
       <div class="team-card">
-        <div class="avatar">D</div>
         <h4>Dennis</h4>
-        <div class="role">Evaluation · plots · docs</div>
+        <div class="role">Evaluation · Plots · Docs</div>
       </div>
     </div>
   </div>
@@ -633,12 +619,12 @@
      ARCHITECTURE / SUBSYSTEMS
      ============================================================ -->
 <section class="section section-alt" id="architecture">
-  <div class="container is-max-desktop">
-    <h2 class="title is-3">System architecture</h2>
+  <div class="container is-max-widescreen">
+    <h2 class="title is-3">System Architecture</h2>
     <p>
-      Pitwall is composed of four loosely-coupled subsystems. Each is owned by one team member,
+      Pitwall is composed of four loosely coupled subsystems. Each is owned by one team member,
       lives in its own Python package, and communicates with the others through narrow,
-      well-typed interfaces.
+      well typed interfaces.
     </p>
 
     <div class="subsystem-grid">
@@ -649,15 +635,15 @@
         <h3>Environment</h3>
         <div class="filepath">environment/environment.py</div>
         <p>
-          A <code>gym.Wrapper</code> around <code>CarRacing-v3</code> that adds every race-specific
+          A <code>gym.Wrapper</code> around <code>CarRacing-v3</code> that adds every race specific
           mechanic.
         </p>
         <ul>
-          <li>Continuous tire wear (0–100 %) updated each step from the supervised tire model</li>
-          <li>Three tire compounds fixed per episode; encoded into the observation</li>
-          <li>Pit-lane trigger zone — a circle around the spawn tile (the natural start/finish line)</li>
-          <li>Multi-lap support via <code>tile_visited_count</code>: reset tile flags, continue racing</li>
-          <li>Reward shaping: lap completion bonus, soft off-track penalty, stagnation termination</li>
+          <li>Continuous tire wear (0 to 100 %) updated each step from the supervised tire model</li>
+          <li>Three tire compounds fixed per episode, encoded into the observation</li>
+          <li>Pit lane trigger zone: a circle around the spawn tile (the natural start/finish line)</li>
+          <li>Multi lap support via <code>tile_visited_count</code>: reset tile flags, continue racing</li>
+          <li>Reward shaping: lap completion bonus, soft off track penalty, stagnation termination</li>
           <li>Optional curriculum: <code>fixed_track_seed</code> forces all envs onto the same track</li>
         </ul>
       </div>
@@ -665,18 +651,18 @@
       <!-- RL agent -->
       <div class="subsystem-card">
         <div class="owner">Danish</div>
-        <h3>RL agent (PPO)</h3>
+        <h3>RL Agent (PPO)</h3>
         <div class="filepath">agents/train.py · agents/policy.py</div>
         <p>
-          Proximal Policy Optimisation via Stable Baselines3 with a multi-input policy over a
+          Proximal Policy Optimisation via Stable Baselines3 with a multi input policy over a
           Dict observation.
         </p>
         <ul>
-          <li>Observation: 96×96 RGB camera frame + 3-d state vector <code>[wear, lap, compound]</code></li>
+          <li>Observation: 96×96 RGB camera frame plus 3-d state vector <code>[wear, lap, compound]</code></li>
           <li>Action space: continuous <code>(steer, throttle, brake)</code></li>
-          <li>Frame stacking (n=4) so the policy can perceive motion / angular velocity</li>
-          <li><code>SubprocVecEnv</code> for 8-way parallelism — near-linear throughput scaling</li>
-          <li><code>EvalCallback</code> writes held-out reward to TensorBoard every 10k steps</li>
+          <li>Frame stacking (n=4) so the policy can perceive motion and angular velocity</li>
+          <li><code>SubprocVecEnv</code> for 8 way parallelism with near linear throughput scaling</li>
+          <li><code>EvalCallback</code> writes held out reward to TensorBoard every 10k steps</li>
           <li>Resume support with CLI hyperparameter overrides (ent_coef, lr, clip_range)</li>
         </ul>
       </div>
@@ -684,18 +670,18 @@
       <!-- Tire model -->
       <div class="subsystem-card">
         <div class="owner">Ben</div>
-        <h3>Tire model</h3>
+        <h3>Tire Model</h3>
         <div class="filepath">tire_model/tire_model.py</div>
         <p>
-          A supervised regression model that maps driving conditions to a per-step wear rate.
+          A supervised regression model that maps driving conditions to a per step wear rate.
         </p>
         <ul>
           <li><code>GradientBoostingRegressor</code> (scikit-learn), 300 trees, depth 4</li>
           <li>Synthetic dataset: 12 000 samples from stylised F1 tire physics</li>
           <li>5 features: speed, cornering load, lap, current wear, compound id</li>
-          <li>Per-compound base wear, speed exponent (~v¹·⁴), cornering sensitivity</li>
+          <li>Per compound base wear, speed exponent (~v¹·⁴), cornering sensitivity</li>
           <li>"Cliff" amplifier: degradation accelerates past 50 % wear</li>
-          <li>Per-compound R² reported alongside overall metrics</li>
+          <li>Per compound R² reported alongside overall metrics</li>
         </ul>
       </div>
 
@@ -705,14 +691,14 @@
         <h3>Evaluation</h3>
         <div class="filepath">evaluation/evaluate.py · watch.py · visualize_track.py</div>
         <p>
-          Rollout-based offline evaluation plus tools for live inspection and debugging.
+          Rollout based offline evaluation plus tools for live inspection and debugging.
         </p>
         <ul>
           <li>Markdown summary table: reward, length, laps, pit count, final wear, lap time</li>
-          <li>Pit-strategy comparison table — buckets episodes by pit count</li>
-          <li>Plots: tire wear over time, per-lap wear, racing line, reward distribution</li>
+          <li>Pit strategy comparison table that buckets episodes by pit count</li>
+          <li>Plots: tire wear over time, per lap wear, racing line, reward distribution</li>
           <li><code>watch.py</code> opens a pygame window to see the agent drive live</li>
-          <li><code>visualize_track.py</code> previews the random track + pit zone geometry</li>
+          <li><code>visualize_track.py</code> previews the random track and pit zone geometry</li>
           <li><code>dump_observation.py</code> saves the agent's stacked frames as PNGs</li>
         </ul>
       </div>
@@ -727,21 +713,21 @@
      ============================================================ -->
 <section class="section">
   <div class="container is-max-desktop">
-    <h2 class="title is-3">How the training loop works</h2>
+    <h2 class="title is-3">How The Training Loop Works</h2>
 
     <div class="content">
       <p>
-        Training runs a standard on-policy PPO loop, but the wrapper environment does most of
+        Training runs a standard on policy PPO loop, but the wrapper environment does most of
         the interesting work. Every step inside the agent's rollout, Pitwall:
       </p>
       <ol>
         <li>Receives a continuous action <code>(steer, throttle, brake)</code> from the policy.</li>
-        <li>Steps the underlying CarRacing physics — Box2D integrates the dynamics at 50 Hz.</li>
+        <li>Steps the underlying CarRacing physics. Box2D integrates the dynamics at 50 Hz.</li>
         <li>Reads the resulting car state: speed from <code>car.hull.linearVelocity</code>,
             lateral acceleration from <code>|ω| · v</code> (normalised into the [0, 10] cornering
             range the tire model was trained on).</li>
         <li>Queries <code>predict_wear_rate(speed, cornering_load, lap, current_wear, compound)</code>
-            and scales the output into a per-env-step wear delta.</li>
+            and scales the output into a per env step wear delta.</li>
         <li>Updates internal state: tire wear, lap counter (via CarRacing's
             <code>tile_visited_count</code>), stagnation counter, pit zone proximity.</li>
         <li>Computes the shaped reward (see below) and returns the new observation, reward,
@@ -749,16 +735,16 @@
       </ol>
       <p>
         Eight env workers run in parallel via <code>SubprocVecEnv</code>. PPO collects 512 steps
-        per worker per rollout (4096 total samples), then runs 10 epochs of mini-batch
+        per worker per rollout (4096 total samples), then runs 10 epochs of mini batch
         gradient updates with the standard clipped surrogate objective. A separate
-        <code>EvalCallback</code> runs deterministic-policy rollouts every 10 000 total steps
-        on a held-out single-env to track unbiased progress, and saves the best
-        <code>best_model.zip</code> whenever a new high-water mark is hit.
+        <code>EvalCallback</code> runs deterministic policy rollouts every 10 000 total steps
+        on a held out single env to track unbiased progress, and saves the best
+        <code>best_model.zip</code> whenever a new high water mark is hit.
       </p>
     </div>
 
     <h3 style="color: var(--text-primary); margin-top: 2.5rem; font-size: 1.3rem; font-weight: 700;">
-      Reward structure (current iteration)
+      Reward Structure (Current Iteration)
     </h3>
 
     <table class="reward-table">
@@ -778,7 +764,7 @@
         <tr>
           <td>Time penalty (base CarRacing)</td>
           <td><code>−0.1</code> per step</td>
-          <td>Discourage dawdling; rewards faster laps</td>
+          <td>Discourage dawdling, rewards faster laps</td>
         </tr>
         <tr>
           <td>Lap completion bonus</td>
@@ -812,7 +798,7 @@
       <strong style="color: var(--text-primary);">Why this shape?</strong> Earlier reward
       structures created a "spin in place on track" local optimum: the agent would visit a few
       tiles, get stuck, and run out the clock collecting only the small time penalty. Adding the
-      stagnation termination and lap completion bonus broke that equilibrium directly — sitting
+      stagnation termination and lap completion bonus broke that equilibrium directly. Sitting
       still now ends the episode within 6 seconds with a clear penalty, while completing a lap
       gives a +200 spike that PPO's value function can latch onto.
     </p>
@@ -825,25 +811,25 @@
      ============================================================ -->
 <section class="section section-alt">
   <div class="container is-max-desktop">
-    <h2 class="title is-3">The tire model</h2>
+    <h2 class="title is-3">The Tire Model</h2>
     <div class="content">
       <p>
         The second AI component is a supervised regression model that predicts instantaneous
         tire wear rate from car state. It runs inside <code>PitwallRacingEnv.step()</code> as
-        a callable —
+        a callable:
       </p>
 <pre><code>predict_wear_rate(
-    speed,            # 0 – 100 (m/s-ish)
-    cornering_load,   # 0 – 10  (lateral g, scaled)
-    lap,              # current lap number, 1-indexed
-    current_wear,     # 0 – 100 %
+    speed,            # 0 to 100 (m/s ish)
+    cornering_load,   # 0 to 10  (lateral g, scaled)
+    lap,              # current lap number, 1 indexed
+    current_wear,     # 0 to 100 %
     compound,         # "soft" | "medium" | "hard"
 ) -> float / ndarray
 </code></pre>
 
       <p>
-        Training data is fully synthetic — 12 000 samples drawn from a stylised F1 physics
-        function with per-compound parameters:
+        Training data is fully synthetic. 12 000 samples drawn from a stylised F1 physics
+        function with per compound parameters:
       </p>
 <pre><code>_COMPOUND_PARAMS = {
     "soft":   {"base": 0.20, "speed_gain": 0.0020, "load_gain": 0.50,
@@ -857,7 +843,7 @@
 
       <p>
         Each compound has a different base wear rate, a different sensitivity to speed and
-        cornering load, and a different <em>cliff</em> exponent — a multiplier that ramps
+        cornering load, and a different <em>cliff</em> exponent: a multiplier that ramps
         degradation in the last half of the tire's life. This captures real F1 tire
         behaviour where a worn tire degrades much faster than a fresh one, and where soft
         compounds give more grip but pay for it with shorter lifetime.
@@ -866,7 +852,7 @@
       <p>
         A <code>GradientBoostingRegressor</code> with 300 trees and max depth 4 is trained on
         the synthetic data using an 80/20 split. Performance is reported both overall and
-        per-compound, so we can detect if the regressor is failing on one tire type in
+        per compound, so we can detect if the regressor is failing on one tire type in
         particular. The model is persisted to <code>models/checkpoints/tire_model.pkl</code>
         via joblib and lazily loaded into the env on first use.
       </p>
@@ -880,11 +866,11 @@
      ============================================================ -->
 <section class="section" id="iteration">
   <div class="container is-max-desktop">
-    <h2 class="title is-3">Iteration log</h2>
+    <h2 class="title is-3">Iteration Log</h2>
     <p>
       Pitwall took shape over many training cycles. Each lap of the loop revealed a new
       failure mode, which informed the next change. The honest path here matters more than
-      the final state — most of what we learned is in <em>why</em> each version stopped
+      the final state. Most of what we learned is in <em>why</em> each version stopped
       working.
     </p>
 
@@ -892,7 +878,7 @@
 
       <div class="timeline-item">
         <div class="lap-number">Lap 1 · Bootstrap</div>
-        <h4>Repo skeleton + tire model v1</h4>
+        <h4>Repo Skeleton + Tire Model V1</h4>
         <p>
           Built the directory structure, dependency list, and a first pass at every
           subsystem. Tire model trained on 12 k synthetic samples with three compounds and
@@ -906,8 +892,8 @@
       </div>
 
       <div class="timeline-item">
-        <div class="lap-number">Lap 2 · Wire the two components</div>
-        <h4>Tire model consumed inside env.step</h4>
+        <div class="lap-number">Lap 2 · Wire The Two Components</div>
+        <h4>Tire Model Consumed Inside env.step</h4>
         <p>
           Replaced the placeholder wear formula with a call to
           <code>predict_wear_rate(...)</code>. The two AI components now close the loop:
@@ -921,8 +907,8 @@
       </div>
 
       <div class="timeline-item">
-        <div class="lap-number">Lap 3 · Lap detection</div>
-        <h4>Multi-lap support via tile_visited_count</h4>
+        <div class="lap-number">Lap 3 · Lap Detection</div>
+        <h4>Multi Lap Support Via tile_visited_count</h4>
         <p>
           CarRacing-v3 terminates after a single circuit. We added a wrapper that watches
           <code>env.unwrapped.tile_visited_count</code>; when it reaches the full track
@@ -933,20 +919,20 @@
       </div>
 
       <div class="timeline-item">
-        <div class="lap-number">Lap 4 · Real pit zone</div>
-        <h4>Pit lane anchored to the spawn tile</h4>
+        <div class="lap-number">Lap 4 · Real Pit Zone</div>
+        <h4>Pit Lane Anchored To The Spawn Tile</h4>
         <p>
-          The initial pit zone was a hard-coded world-coord box that never fired because
+          The initial pit zone was a hard coded world coord box that never fired because
           CarRacing builds a random track each reset. Replaced it with a circle centred on
-          <code>track[0]</code> (where the car spawns — the natural start/finish-line
+          <code>track[0]</code> (where the car spawns, the natural start/finish line
           analogue), cached at reset. Pit now triggers when the car is inside the zone,
-          below a speed threshold, with non-trivial tire wear.
+          below a speed threshold, with non trivial tire wear.
         </p>
       </div>
 
       <div class="timeline-item">
-        <div class="lap-number">Lap 5 · Full training loop</div>
-        <h4>EvalCallback, SubprocVecEnv, resume</h4>
+        <div class="lap-number">Lap 5 · Full Training Loop</div>
+        <h4>EvalCallback, SubprocVecEnv, Resume</h4>
         <p>
           Hardened the trainer for real overnight runs: 8-way parallelism via
           <code>SubprocVecEnv</code>, held-out eval every 10 k total steps with automatic
@@ -957,8 +943,8 @@
       </div>
 
       <div class="timeline-item">
-        <div class="lap-number">Lap 6 · Rich evaluation</div>
-        <h4>Lap times, racing line, A/B comparison</h4>
+        <div class="lap-number">Lap 6 · Rich Evaluation</div>
+        <h4>Lap Times, Racing Line, A/B Comparison</h4>
         <p>
           Rewrote <code>evaluate.py</code> around an <code>EpisodeResult</code> dataclass
           that holds per-step telemetry. Added the per-lap wear bar chart, the racing-line
@@ -969,11 +955,11 @@
       </div>
 
       <div class="timeline-item">
-        <div class="lap-number">Lap 7 · Aggression issues</div>
-        <h4>Frame stacking + larger CNN</h4>
+        <div class="lap-number">Lap 7 · Aggression Issues</div>
+        <h4>Frame Stacking + Larger CNN</h4>
         <p>
           The first long training run plateaued around 30 % lap completion with classic
-          hairpin failures — the agent would initiate a turn but release prematurely. The
+          hairpin failures. The agent would initiate a turn but release prematurely. The
           fix from the literature is <strong>frame stacking</strong> (give the policy the
           last 4 frames so it can perceive motion) plus a beefier feature extractor. Added
           <code>VecFrameStack(n=4)</code> and a custom <code>PitwallFeaturesExtractor</code>
@@ -983,7 +969,7 @@
 
       <div class="timeline-item">
         <div class="lap-number">Lap 8 · Regression</div>
-        <h4>Bigger model converged to worse equilibrium</h4>
+        <h4>Bigger Model Converged To Worse Equilibrium</h4>
         <p>
           To our surprise, the frame-stack + big-CNN run plateaued <em>worse</em> than the
           baseline. After 2M steps the agent had learned an aggressive driving style that
@@ -997,20 +983,20 @@
       </div>
 
       <div class="timeline-item">
-        <div class="lap-number">Lap 9 · Curriculum + safety nets</div>
-        <h4>Fixed-seed curriculum, looser barrier, waypoints</h4>
+        <div class="lap-number">Lap 9 · Curriculum + Safety Nets</div>
+        <h4>Fixed Seed Curriculum, Looser Barrier, Waypoints</h4>
         <p>
           Added <code>--fixed-track-seed</code> so all envs see the same track during phase
           1 (much lower variance, faster learning of one specific corner sequence).
-          Loosened the off-track barrier from 10 → 18 units so apex bobbles could recover
+          Loosened the off track barrier from 10 to 18 units so apex bobbles could recover
           instead of forcing termination. Added optional waypoint bonuses around the track
           for a denser reward signal.
         </p>
       </div>
 
       <div class="timeline-item">
-        <div class="lap-number">Lap 10 · Reward redesign</div>
-        <h4>Spin-in-place was the real bug</h4>
+        <div class="lap-number">Lap 10 · Reward Redesign</div>
+        <h4>Spin In Place Was The Real Bug</h4>
         <p>
           After 7M cumulative steps we still hadn't completed a lap. Detailed inspection of
           long episodes revealed the agent was discovering a "spin in place on track" local
@@ -1019,11 +1005,11 @@
         </p>
         <p>
           We redesigned: added a <strong>lap completion bonus</strong> (+200) for a clean
-          terminal signal, a <strong>stagnation termination</strong> (-25 after 300 steps
+          terminal signal, a <strong>stagnation termination</strong> (−25 after 300 steps
           without a new tile) that directly kills the spin equilibrium, and a
-          <strong>soft per-step penalty</strong> for being on grass. Reverted the custom
-          CNN back to SB3's default NatureCNN — smaller models train faster and are less
-          prone to over-confidence in bad equilibria.
+          <strong>soft per step penalty</strong> for being on grass. Reverted the custom
+          CNN back to SB3's default NatureCNN. Smaller models train faster and are less
+          prone to over confidence in bad equilibria.
         </p>
         <div class="tag-row">
           <span class="tag">current version</span>
@@ -1048,32 +1034,32 @@
 
       <div class="column">
         <h3 style="color: var(--text-primary); font-size: 1.2rem; margin-bottom: 0.8rem;">
-          Tire model accuracy
+          Tire Model Accuracy
         </h3>
         <p>
-          The regression model achieves high R² on held-out synthetic data, with
-          per-compound metrics close to the overall figure — confirming the regressor
-          discriminates between soft / medium / hard cleanly rather than averaging them
+          The regression model achieves high R² on held out synthetic data, with
+          per compound metrics close to the overall figure. This confirms that the regressor
+          discriminates between soft, medium, and hard cleanly rather than averaging them
           out. The diagnostic plot shows the expected ordering: soft tires degrade
           fastest, hard tires last longest, and all three exhibit the "cliff" in the
           second half of life.
         </p>
         <p>
           <em style="color: var(--text-muted);">
-            (R² and MAE printed by <code>python -m tire_model.tire_model</code>; per-compound
-            wear-rate-vs-lap plot saved to <code>evaluation/results/tire_compound_curves.png</code>.)
+            (R² and MAE printed by <code>python -m tire_model.tire_model</code>. The per compound
+            wear rate vs lap plot is saved to <code>evaluation/results/tire_compound_curves.png</code>.)
           </em>
         </p>
       </div>
 
       <div class="column">
         <h3 style="color: var(--text-primary); font-size: 1.2rem; margin-bottom: 0.8rem;">
-          Agent training
+          Agent Training
         </h3>
         <p>
           Training metrics live in TensorBoard under <code>runs/PPO_*/</code>. The
-          headline curves to watch are <code>eval/mean_reward</code> (held-out reward
-          every 10 k steps) and <code>rollout/ep_len_mean</code> (episode length —
+          headline curves to watch are <code>eval/mean_reward</code> (held out reward
+          every 10 k steps) and <code>rollout/ep_len_mean</code> (episode length, which
           climbs as the agent survives longer on track).
         </p>
         <p>
@@ -1086,24 +1072,24 @@
     </div>
 
     <h3 style="color: var(--text-primary); margin-top: 2.5rem; font-size: 1.2rem;">
-      Evaluation artefacts
+      Evaluation Artefacts
     </h3>
     <p>
       Running <code>python -m evaluation.evaluate --episodes 5</code> against a trained
       checkpoint produces a complete report inside <code>evaluation/results/</code>:
     </p>
     <ul>
-      <li><code>tire_wear.png</code> — wear over time per episode with lap-boundary markers</li>
-      <li><code>per_lap_wear.png</code> — bar chart of tire wear at end of each lap</li>
-      <li><code>racing_line.png</code> — episode 0's (x, y) trajectory overlaid on the track,
-          with the pit zone and pit-stop markers visible</li>
-      <li><code>reward_hist.png</code> — distribution of episode rewards across eval episodes</li>
-      <li>A markdown table to stdout: reward / length / laps / pit count / final wear / lap time</li>
-      <li>A pit-strategy comparison table bucketed by pit count</li>
+      <li><code>tire_wear.png</code>: wear over time per episode with lap boundary markers</li>
+      <li><code>per_lap_wear.png</code>: bar chart of tire wear at end of each lap</li>
+      <li><code>racing_line.png</code>: episode 0's (x, y) trajectory overlaid on the track,
+          with the pit zone and pit stop markers visible</li>
+      <li><code>reward_hist.png</code>: distribution of episode rewards across eval episodes</li>
+      <li>A markdown table to stdout: reward, length, laps, pit count, final wear, lap time</li>
+      <li>A pit strategy comparison table bucketed by pit count</li>
     </ul>
     <p>
       Add <code>--baseline-path</code> to also evaluate a second checkpoint on the same
-      seeds — the same plot set is saved with a <code>baseline_</code> prefix for direct
+      seeds. The same plot set is saved with a <code>baseline_</code> prefix for direct
       A/B comparison.
     </p>
   </div>
@@ -1120,38 +1106,38 @@
     <div class="content">
       <p>
         <strong style="color: var(--text-primary);">Reward shaping is the dominant lever.</strong>
-        Every architectural change we made — frame stacking, the bigger CNN, the camera zoom,
-        the soft barrier — was less impactful than the reward redesign. PPO converges quickly
+        Every architectural change we made (frame stacking, the bigger CNN, the camera zoom,
+        the soft barrier) was less impactful than the reward redesign. PPO converges quickly
         and confidently to whatever the gradient signal points to. If the gradient points
         somewhere bad, more parameters just get you there faster.
       </p>
       <p>
         <strong style="color: var(--text-primary);">Local optima are sneaky.</strong> The
-        "spin in place on track" equilibrium was invisible from aggregate metrics — average
-        reward was just modestly negative — but watching a single episode in
+        "spin in place on track" equilibrium was invisible from aggregate metrics (average
+        reward was just modestly negative), but watching a single episode in
         <code>watch.py</code> revealed it immediately. The lesson: aggregate metrics tell you
-        the agent is failing; <em>watching</em> tells you why.
+        the agent is failing, <em>watching</em> tells you why.
       </p>
       <p>
         <strong style="color: var(--text-primary);">Curriculum learning helps but isn't free.</strong>
         Locking to a single seed during phase 1 drops variance dramatically and accelerates
         early progress, but the transition to random tracks (phase 2) is its own
-        mini-training problem with a temporary regression. Worth it overall; not magic.
+        mini training problem with a temporary regression. Worth it overall, not magic.
       </p>
       <p>
-        <strong style="color: var(--text-primary);">The two-AI-components story works.</strong>
+        <strong style="color: var(--text-primary);">The two AI components story works.</strong>
         The PPO agent and the tire model are coupled through the reward function and the
         observation, not through any shared training signal. They were developed
         independently (different team members, different timelines) and integrated cleanly.
-        That separation is what makes the system testable — you can ablate one without
+        That separation is what makes the system testable: you can ablate one without
         breaking the other.
       </p>
       <p>
         <strong style="color: var(--text-primary);">What we'd do differently.</strong>
         Start with a tighter reward function. Resist the urge to add architecture changes
-        before fixing rewards. Build the evaluator's racing-line plot earlier — it's the
-        single most useful debugging artefact and we shipped it late. And run a sanity-check
-        on the observation pipeline before training overnight — we eventually wrote
+        before fixing rewards. Build the evaluator's racing line plot earlier, it's the
+        single most useful debugging artefact and we shipped it late. And run a sanity check
+        on the observation pipeline before training overnight; we eventually wrote
         <code>dump_observation.py</code> to verify the agent's view matches what we
         thought it saw.
       </p>
@@ -1172,11 +1158,6 @@
     </div>
     <p style="font-size: 0.85rem;">
       Pitwall · UTS 41118 AI in Robotics · 2026
-    </p>
-    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
-      Page layout adapted from the
-      <a href="https://github.com/nerfies/nerfies.github.io">Nerfies</a> template
-      under CC BY-SA 4.0.
     </p>
   </div>
 </footer>
