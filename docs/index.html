@@ -446,6 +446,39 @@
       background: var(--bg-secondary);
     }
 
+    /* Run section: step blocks */
+    .run-step {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent-red);
+      border-radius: 6px;
+      padding: 1.4rem 1.6rem;
+      margin: 1.2rem 0;
+    }
+    .run-step .step-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent-red);
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+    .run-step h3 {
+      color: var(--text-primary);
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin: 0 0 0.6rem 0;
+    }
+    .run-step p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      margin: 0 0 0.6rem 0;
+    }
+    .run-step pre {
+      margin: 0.6rem 0 0.4rem 0;
+    }
+
     @media (max-width: 1100px) {
       .subsystem-grid { grid-template-columns: repeat(2, 1fr); }
     }
@@ -497,6 +530,10 @@
       <a href="#architecture" class="button is-pitwall">
         <span class="icon"><i class="fas fa-microchip"></i></span>
         <span>Architecture</span>
+      </a>
+      <a href="#usage" class="button is-pitwall">
+        <span class="icon"><i class="fas fa-terminal"></i></span>
+        <span>Run It</span>
       </a>
       <a href="#iteration" class="button is-pitwall">
         <span class="icon"><i class="fas fa-history"></i></span>
@@ -857,6 +894,216 @@
         via joblib and lazily loaded into the env on first use.
       </p>
     </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     RUNNING THE PROJECT
+     ============================================================ -->
+<section class="section" id="usage">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3">Running The Project</h2>
+    <p>
+      Every command below runs from the <code>PitwallAgent/</code> folder with the
+      project's virtual environment activated. The full flag surface for any script
+      is available with <code>--help</code>.
+    </p>
+
+    <div class="run-step">
+      <div class="step-label">Setup</div>
+      <h3>Install Dependencies</h3>
+      <p>
+        Python 3.10 or newer. Create a virtual environment and install everything
+        in <code>requirements.txt</code>.
+      </p>
+<pre><code>python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS / Linux
+
+pip install --upgrade pip
+pip install -r requirements.txt
+</code></pre>
+      <p>
+        On Windows, <code>gymnasium[box2d]</code> builds Box2D from source and needs
+        SWIG. If pip fails on <code>box2d-py</code>, install SWIG first
+        (<code>pip install swig</code>) and rerun.
+      </p>
+    </div>
+
+    <div class="run-step">
+      <div class="step-label">Step 1</div>
+      <h3>Train The Tire Model</h3>
+      <p>
+        Generates 12 000 synthetic samples, trains the
+        <code>GradientBoostingRegressor</code>, prints overall and per compound R² /
+        MAE, and saves the model and a diagnostic plot. Required before the env will
+        construct (it raises if the <code>.pkl</code> is missing).
+      </p>
+<pre><code>python -m tire_model.tire_model
+</code></pre>
+      <p>
+        Outputs: <code>models/checkpoints/tire_model.pkl</code>,
+        <code>data/synthetic/tire_data.npz</code>,
+        <code>evaluation/results/tire_compound_curves.png</code>.
+        Runtime: under one minute.
+      </p>
+    </div>
+
+    <div class="run-step">
+      <div class="step-label">Step 2</div>
+      <h3>Smoke Test The Pipeline</h3>
+      <p>
+        A short run with 2 parallel envs to confirm everything wires up before
+        committing to a long training session. Should complete in about 5 minutes.
+      </p>
+<pre><code>python -m agents.train --total-timesteps 5000 --n-envs 2 --frame-stack 4
+</code></pre>
+    </div>
+
+    <div class="run-step">
+      <div class="step-label">Step 3</div>
+      <h3>Phase A: Curriculum Training</h3>
+      <p>
+        Trains the agent on a single fixed track to learn the basics with low
+        variance. 8 parallel envs, frame stacking, entropy bonus to keep
+        exploration alive. Several hours on CPU.
+      </p>
+<pre><code>python -m agents.train ^
+    --total-timesteps 1500000 ^
+    --ent-coef 0.01 ^
+    --n-envs 8 ^
+    --frame-stack 4 ^
+    --fixed-track-seed 42
+</code></pre>
+      <p>
+        Outputs go to <code>models/checkpoints/</code> (periodic
+        <code>ppo_pitwall_*_steps.zip</code>, plus
+        <code>best/best_model.zip</code> from EvalCallback) and TensorBoard logs to
+        <code>runs/PPO_*/</code>.
+      </p>
+    </div>
+
+    <div class="run-step">
+      <div class="step-label">Step 4</div>
+      <h3>Phase B: Generalise To Random Tracks</h3>
+      <p>
+        Once eval/mean_reward is stable on the fixed track, Ctrl+C and resume
+        without <code>--fixed-track-seed</code>. The agent transitions from one
+        memorised track to the full random distribution.
+      </p>
+<pre><code>python -m agents.train ^
+    --total-timesteps 3000000 ^
+    --ent-coef 0.01 ^
+    --n-envs 8 ^
+    --frame-stack 4 ^
+    --resume models/checkpoints/ppo_pitwall_1500000_steps.zip
+</code></pre>
+      <p>
+        Resume honours CLI overrides for <code>ent_coef</code>,
+        <code>learning_rate</code>, and <code>clip_range</code> via
+        <code>custom_objects</code>. Architectural hyperparameters stay baked into
+        the checkpoint.
+      </p>
+    </div>
+
+    <div class="run-step">
+      <div class="step-label">Monitor</div>
+      <h3>Watch Training In TensorBoard</h3>
+      <p>
+        Open a second terminal and run TensorBoard. The web UI updates roughly
+        every 30 seconds, faster if you change the reload interval in the gear menu.
+      </p>
+<pre><code>tensorboard --logdir runs/
+</code></pre>
+      <p>
+        Key curves: <code>eval/mean_reward</code>,
+        <code>rollout/ep_rew_mean</code>, <code>rollout/ep_len_mean</code>,
+        <code>train/explained_variance</code>, <code>train/clip_fraction</code>.
+      </p>
+    </div>
+
+    <div class="run-step">
+      <div class="step-label">Inspect</div>
+      <h3>Watch The Agent Drive Live</h3>
+      <p>
+        Opens a pygame window and renders the policy driving in real time. Use the
+        random policy first to confirm the env renders correctly, then point at a
+        checkpoint to see the trained agent.
+      </p>
+<pre><code># Random policy (no model needed)
+python -m evaluation.watch --random --frame-stack 4
+
+# Best checkpoint mid training (re-run to refresh)
+python -m evaluation.watch ^
+    --model-path models/checkpoints/best/best_model.zip ^
+    --frame-stack 4
+
+# On the same track the agent was curriculum trained on
+python -m evaluation.watch ^
+    --model-path models/checkpoints/best/best_model.zip ^
+    --frame-stack 4 --fixed-track-seed 42
+</code></pre>
+    </div>
+
+    <div class="run-step">
+      <div class="step-label">Evaluate</div>
+      <h3>Full Evaluation Report</h3>
+      <p>
+        Runs N held out episodes on a trained checkpoint, prints summary tables,
+        and saves the full plot set to <code>evaluation/results/</code>.
+      </p>
+<pre><code>python -m evaluation.evaluate --episodes 5 --frame-stack 4
+</code></pre>
+      <p>
+        Add <code>--baseline-path</code> to A/B compare two checkpoints on identical
+        seeds; the second model's outputs get a <code>baseline_</code> prefix.
+      </p>
+<pre><code>python -m evaluation.evaluate ^
+    --model-path models/checkpoints/best/best_model.zip ^
+    --baseline-path models/baseline/ppo_pitwall_final.zip ^
+    --episodes 5 ^
+    --frame-stack 4
+</code></pre>
+    </div>
+
+    <div class="run-step">
+      <div class="step-label">Debug</div>
+      <h3>Track Preview And Observation Dump</h3>
+      <p>
+        Two utilities for sanity checking the env without needing a trained model.
+      </p>
+<pre><code># Preview the track shape and pit zone for a given seed
+python -m evaluation.visualize_track --seed 42 --n-seeds 4
+
+# Dump the 4 stacked frames the agent actually sees as PNGs
+python -m evaluation.dump_observation
+</code></pre>
+      <p>
+        The track preview saves <code>evaluation/results/track_preview.png</code>
+        with the pit zone overlay. The observation dump saves
+        <code>evaluation/results/obs_frame_*.png</code> so you can verify the
+        car is centred on the track in every frame of the stack.
+      </p>
+    </div>
+
+    <div class="run-step">
+      <div class="step-label">Reset</div>
+      <h3>Wipe And Start Fresh</h3>
+      <p>
+        If a training run goes south and you want to restart from scratch (clean
+        checkpoints, clean TensorBoard logs), the safe wipe commands are:
+      </p>
+<pre><code>Remove-Item -Recurse -Force models\checkpoints\best -ErrorAction SilentlyContinue
+Remove-Item models\checkpoints\ppo_pitwall_*.zip -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force runs\* -ErrorAction SilentlyContinue
+</code></pre>
+      <p>
+        The tire model <code>.pkl</code> is preserved (the env needs it). Source
+        code, the LOGBOOK, and gitignored artefacts are untouched.
+      </p>
+    </div>
+
   </div>
 </section>
 
