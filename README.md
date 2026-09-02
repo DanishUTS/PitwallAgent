@@ -4,7 +4,7 @@ An F1-inspired autonomous racing simulator built on top of Gymnasium's
 `CarRacing-v3` environment. A reinforcement-learning agent is trained to drive
 a multi-lap race while a separate supervised tire-degradation model predicts
 wear in real time. The objective is to minimise total race time by trading off
-raw speed against tire strategy and pit stops.
+raw speed against tire strategy and pit stops. 
 
 ---
 
